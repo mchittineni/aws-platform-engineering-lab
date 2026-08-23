@@ -161,6 +161,25 @@ This matters because the apply roles hold `PowerUserAccess`. Without the deny, a
 compromised or simply mistaken pipeline run could disable the audit trail — and
 that deletion would be the last thing the trail ever recorded.
 
+An inline deny only binds the role it is attached to, so on its own it is
+walkable: with `IAMFullAccess` the apply role could create a second role
+carrying `AdministratorAccess` and no deny policy, assume it, and stop the trail
+from there. Two API calls, no deny statement violated.
+
+What closes that is the permissions boundary in `aws_iam_policy.ci_boundary` —
+the same deny statements plus a blanket allow, attached to both CI role types.
+The guardrail additionally denies `iam:CreateRole` and `iam:CreateUser` unless
+the new principal carries that exact boundary, denies detaching or replacing it,
+and denies rewriting the boundary policy itself. That is what makes the denies
+transitive: a role the pipeline creates inherits them whether or not anyone
+remembered to attach the policy.
+
+The cost is that every module creating an IAM role must accept and pass
+`permissions_boundary_arn`, sourced from the bootstrap output
+`ci_permissions_boundary_arn`. An environment that forgets it fails at apply
+time rather than quietly creating an unconstrained role, which is the intended
+failure mode.
+
 The audit bucket's own policy denies `s3:DeleteObject` to every principal except
 an explicitly listed set, defaulting to the account root alone. It deliberately
 does **not** deny `s3:PutBucketPolicy`: denying that would lock Terraform out of
@@ -190,6 +209,10 @@ data, not the PVC that pointed at it. See
 - Public access blocked at the bucket level
 - Server access logging into a separate bucket with a 90 day expiry
 - Locking through S3 conditional writes (`use_lockfile`), not DynamoDB
+- Object access is scoped per environment to `aws/<env>/*`. The plan role gets
+  `s3:GetObject` and `kms:Decrypt` only; `s3:PutObject` and `s3:DeleteObject`
+  belong to the apply role alone. Neither can reach `aws/bootstrap/`, the state
+  that defines the CI roles themselves.
 
 ## Pipeline controls
 
@@ -198,7 +221,7 @@ data, not the PVC that pointed at it. See
 | Every PR | `terraform fmt`, `validate`, `tflint`, `tfsec`, Checkov, gitleaks, actionlint |
 | Every PR | kubeconform against the 1.34 schemas, plus Checkov container isolation policies |
 | Every PR | ansible-lint, and a syntax check of every environment's playbook |
-| Every PR touching AWS | Read-only plan per environment through the plan role, posted as one sticky comment |
+| Every PR touching AWS | Read-only plan per environment, scoped to that environment's state prefix, as one sticky comment |
 | Apply | Manual dispatch only, against a protected GitHub environment |
 | Apply | Executes the saved plan file, so the reviewed change is the applied change |
 | Daily | Scheduled read-only plan per environment; drift opens an issue and a clean plan closes it |
@@ -209,8 +232,14 @@ tfsec and Checkov results are uploaded as SARIF to code scanning as well as
 failing the job, so an accepted finding stays visible instead of being silenced
 by a `#tfsec:ignore` nobody revisits.
 
-There are exactly six such ignores in the repository, each with its reason on
-the line above it. Five are variations of the same fact: an S3 access log bucket
+There are exactly seven such tfsec ignores in the repository, and 56 Checkov
+skips across 25 rules, each with its reason on the line above it. The Checkov
+set is larger for a mechanical reason rather than a security one: Checkov does
+not follow a `count`-indexed resource reference, so a public access block,
+versioning rule or lifecycle configuration attached that way is reported as
+missing even though it is three resources further down the same file. One is the permissions boundary's blanket allow, which a
+wildcard rule cannot distinguish from an over-broad grant. Five are variations
+of the same fact: an S3 access log bucket
 cannot log to itself, and the S3 log delivery service cannot write to a bucket
 encrypted with a customer managed key.
 
@@ -221,9 +250,11 @@ without a reason is how a gap becomes permanent.
 
 - **Broad CI apply permissions.** The apply roles hold `PowerUserAccess` plus
   `IAMFullAccess`. This is the pragmatic starting point for a stack that creates
-  its own IAM roles, and the guardrail deny policy above is what keeps that
-  breadth from being able to cover its own tracks. It should be narrowed to an
-  explicit action list once the resource set stops changing.
+  its own IAM roles. What keeps that breadth from covering its own tracks is the
+  guardrail deny policy *plus the permissions boundary* — the deny policy alone
+  is not enough, because `IAMFullAccess` would otherwise let the apply role
+  create a second role without the deny and assume it. It should still be
+  narrowed to an explicit action list once the resource set stops changing.
 - **Single account.** Dev, staging and production share one AWS account, so the
   isolation between them is IAM and VPC rather than an account boundary. A
   multi-account landing zone with AWS Organizations, SCPs and a delegated
