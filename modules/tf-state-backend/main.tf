@@ -8,6 +8,12 @@
 data "aws_caller_identity" "current" {}
 
 resource "aws_kms_key" "state" {
+  # No explicit key policy, so the default applies: the account root holds
+  # kms:*, and access is governed by the IAM policies on the roles that use the
+  # key. That is the model this repository uses deliberately — see the note in
+  # docs/security.md. Writing an explicit policy incorrectly makes a key
+  # permanently unusable, so it is a considered follow-up, not a quick fix.
+  #checkov:skip=CKV2_AWS_64:Access is governed by IAM; default key policy is deliberate
   description             = "Encrypts Terraform state in ${var.bucket_name}"
   deletion_window_in_days = 30
   enable_key_rotation     = true
@@ -21,6 +27,7 @@ resource "aws_kms_alias" "state" {
 }
 
 resource "aws_s3_bucket" "state" {
+  #checkov:skip=CKV2_AWS_62:Event notifications are not part of this design
   bucket = var.bucket_name
 
   tags = merge(var.tags, { Name = var.bucket_name })
@@ -39,6 +46,21 @@ resource "aws_s3_bucket" "state" {
 #tfsec:ignore:aws-s3-enable-bucket-logging
 #tfsec:ignore:aws-s3-encryption-customer-key
 resource "aws_s3_bucket" "access_logs" {
+  # An access log bucket is the end of the logging chain, so several bucket
+  # checks cannot be satisfied by definition:
+  #   - it cannot log to itself (CKV_AWS_18)
+  #   - the S3 log delivery service cannot write to a CMK-encrypted bucket, so
+  #     it stays on SSE-S3 (CKV_AWS_145)
+  # The remaining three are resolution failures, not gaps: the public access
+  # block, versioning and lifecycle all exist below, attached through a
+  # count-indexed reference that Checkov does not follow.
+  #checkov:skip=CKV_AWS_18:An access log bucket cannot log to itself
+  #checkov:skip=CKV_AWS_145:S3 log delivery cannot write to a CMK-encrypted bucket
+  #checkov:skip=CKV_AWS_21:Versioning is configured below, count-indexed
+  #checkov:skip=CKV2_AWS_6:Public access block is configured below, count-indexed
+  #checkov:skip=CKV2_AWS_61:Lifecycle configuration is defined below, count-indexed
+  #checkov:skip=CKV2_AWS_62:Event notifications are not part of this design
+  #checkov:skip=CKV_AWS_144:Single region is a documented known gap
   count = var.enable_access_logging ? 1 : 0
 
   bucket = "${var.bucket_name}-access-logs"
@@ -111,6 +133,13 @@ resource "aws_s3_bucket_lifecycle_configuration" "access_logs" {
 
     noncurrent_version_expiration {
       noncurrent_days = 7
+    }
+
+    # The state bucket already does this. An abandoned multipart upload is
+    # billed as storage but is invisible to a bucket listing, so without this
+    # the access log bucket accrues cost nothing ever shows.
+    abort_incomplete_multipart_upload {
+      days_after_initiation = 7
     }
   }
 }
