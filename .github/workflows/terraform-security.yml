@@ -28,11 +28,6 @@ jobs:
         with:
           sarif_file: tfsec.sarif
 
-      # Code scanning needs GitHub Advanced Security on a private repository, so
-      # on this one the upload returns "Resource not accessible by integration".
-      # The finding gate is the step that fails the job, not this upload, so a
-      # missing Security tab must not turn the build red. Drop
-      # continue-on-error if the repository becomes public or gets GHAS.
       - name: Upload the tfsec SARIF report
         continue-on-error: true
         uses: github/codeql-action/upload-sarif@f1f6e5f6af878fb37288ce1c627459e94dbf7d01  # v3.28.5
@@ -59,21 +54,8 @@ jobs:
         with:
           python-version: "3.13"
 
-      # Installed from pip rather than through checkov-action. That action runs
-      # a Docker image pinned at checkov 2.0.930, which is both years behind the
-      # version pre-commit and `make security` use — so CI was enforcing a
-      # different check set than any local run — and old enough to reject
-      # `--output cli,sarif`, which is why this job never got as far as scanning.
-      #
-      # Pinned to the same version as .pre-commit-config.yaml. Bump both together.
       - name: Install Checkov
         run: pip install checkov==3.3.13
 
-      # Checkov exits non-zero on a finding, so this step is the gate. Every
-      # accepted finding carries an inline `#checkov:skip` with its reason.
-      #
-      # No SARIF upload: code scanning needs GitHub Advanced Security on a
-      # private repository, and a report nobody can read is not worth a step
-      # that fails. The cli output in this log is the record.
       - name: Checkov
         run: checkov --directory . --framework terraform --quiet --compact
