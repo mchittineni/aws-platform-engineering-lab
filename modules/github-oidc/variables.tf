@@ -21,7 +21,10 @@ variable "roles" {
       repo:org/repo:environment:production   a protected environment
       repo:org/repo:pull_request             pull request runs, plan only
 
-    Never use `repo:org/repo:*` for a role that can apply.
+    Subjects are validated against that closed set of shapes. A subject
+    containing `*` is rejected outright: the trust policy matches `sub` with
+    `StringLike`, so a single `*` in the wrong place widens the role from one
+    branch to every repository on GitHub.
   EOT
   type = map(object({
     subjects             = list(string)
@@ -31,13 +34,32 @@ variable "roles" {
     description          = optional(string)
   }))
 
+  # Rejecting `*` anywhere, rather than only a trailing `:*`, is the point.
+  # `endswith(subject, ":*")` catches `repo:org/repo:*` but lets through
+  # `repo:org/*`, `repo:org/repo:ref:refs/heads/*` and a bare `*` — each of
+  # which is broader than the subject it was meant to block.
   validation {
     condition = alltrue(flatten([
       for role in var.roles : [
-        for subject in role.subjects : !endswith(subject, ":*")
+        for subject in role.subjects : !strcontains(subject, "*")
       ]
     ]))
-    error_message = "Wildcard subjects such as repo:org/repo:* let any branch or fork assume the role. Scope subjects to a ref, environment or pull_request."
+    error_message = "OIDC subjects must not contain '*'. The trust policy matches sub with StringLike, so any wildcard widens the role beyond the intended branch, environment or repository."
+  }
+
+  # An allowlist of the three shapes GitHub actually issues, so a malformed or
+  # creatively-scoped subject fails at plan time rather than becoming a trust
+  # policy nobody re-reads.
+  validation {
+    condition = alltrue(flatten([
+      for role in var.roles : [
+        for subject in role.subjects : can(regex(
+          "^repo:[^/*:]+/[^/*:]+:(pull_request|environment:[^*]+|ref:refs/(heads|tags)/[^*]+)$",
+          subject
+        ))
+      ]
+    ]))
+    error_message = "Each OIDC subject must be one of repo:org/repo:pull_request, repo:org/repo:environment:NAME, or repo:org/repo:ref:refs/heads/BRANCH (refs/tags/TAG also accepted)."
   }
 }
 
