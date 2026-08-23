@@ -16,7 +16,17 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
+      # The released binary rather than a wrapper action. raven-actions/actionlint
+      # shells out through actions/github-script to require @actions/tool-cache,
+      # which fails to resolve on the Node 24 runner
+      # (ERR_PACKAGE_PATH_NOT_EXPORTED) and takes the whole job with it. A
+      # pinned tarball has no such moving parts.
       - name: actionlint
-        uses: raven-actions/actionlint@3a24062651993d40fed1019b58ac6fbdfbf276cc  # v2.0.1
-        with:
-          fail-on-error: true
+        env:
+          ACTIONLINT_VERSION: 1.7.12
+        run: |
+          set -euo pipefail
+          curl -sSfL -o actionlint.tar.gz \
+            "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
+          tar -xzf actionlint.tar.gz actionlint
+          ./actionlint -color
