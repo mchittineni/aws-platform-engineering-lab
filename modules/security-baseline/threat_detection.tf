@@ -7,6 +7,7 @@
 # ---------------------------------------------------------------------------
 
 resource "aws_guardduty_detector" "this" {
+  #checkov:skip=CKV2_AWS_3:The detector is enabled here, behind a count
   count = var.enable_guardduty ? 1 : 0
 
   enable                       = true

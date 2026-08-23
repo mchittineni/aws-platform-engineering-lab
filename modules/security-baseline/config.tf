@@ -112,6 +112,8 @@ resource "aws_config_delivery_channel" "this" {
 # The recorder is created stopped. Nothing is recorded until this resource
 # turns it on, and it cannot be turned on before the delivery channel exists.
 resource "aws_config_configuration_recorder_status" "this" {
+  # The recorder sets all_supported and include_global_resource_types.
+  #checkov:skip=CKV2_AWS_45:The recorder records all supported resources
   count = var.enable_config ? 1 : 0
 
   name       = aws_config_configuration_recorder.this[0].name
