@@ -6,6 +6,7 @@ locals {
 }
 
 resource "aws_kms_key" "ecr" {
+  #checkov:skip=CKV2_AWS_64:Access is governed by IAM; default key policy is deliberate
   count = local.create_kms_key ? 1 : 0
 
   description             = "Encrypts container images in ECR"
