@@ -68,6 +68,8 @@ data "aws_availability_zones" "available" {
 module "vpc" {
   source = "../../modules/vpc"
 
+  permissions_boundary_arn = var.permissions_boundary_arn
+
   name       = local.cluster_name
   cidr_block = var.vpc_cidr_block
 
@@ -93,6 +95,8 @@ module "vpc" {
 
 module "eks" {
   source = "../../modules/eks"
+
+  permissions_boundary_arn = var.permissions_boundary_arn
 
   cluster_name       = local.cluster_name
   kubernetes_version = var.kubernetes_version
@@ -166,6 +170,8 @@ module "eks" {
 module "platform_iam" {
   source = "../../modules/eks-platform-iam"
 
+  permissions_boundary_arn = var.permissions_boundary_arn
+
   cluster_name      = module.eks.cluster_name
   oidc_provider_arn = module.eks.oidc_provider_arn
   oidc_provider_url = module.eks.oidc_provider_url
@@ -236,6 +242,8 @@ module "observability" {
 
 module "backup" {
   source = "../../modules/backup"
+
+  permissions_boundary_arn = var.permissions_boundary_arn
 
   name = local.cluster_name
 
