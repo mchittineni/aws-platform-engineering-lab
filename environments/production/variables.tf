@@ -111,3 +111,17 @@ variable "backup_copy_destination_vault_arn" {
   type        = string
   default     = null
 }
+
+variable "permissions_boundary_arn" {
+  description = <<-EOT
+    Permissions boundary applied to every IAM role this environment creates.
+    Take it from the bootstrap output `ci_permissions_boundary_arn`.
+
+    Required when the environment is applied by CI: the apply role is denied
+    `iam:CreateRole` unless the new role carries this boundary, which is what
+    makes the audit guardrail apply to roles the pipeline creates rather than
+    only to the pipeline role itself.
+  EOT
+  type        = string
+  default     = null
+}
