@@ -5,8 +5,6 @@
 # local state into the bucket it just created.
 # ---------------------------------------------------------------------------
 
-data "aws_caller_identity" "current" {}
-
 resource "aws_kms_key" "state" {
   # No explicit key policy, so the default applies: the account root holds
   # kms:*, and access is governed by the IAM policies on the roles that use the
