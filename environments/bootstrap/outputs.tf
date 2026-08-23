@@ -74,3 +74,16 @@ output "budget_names" {
   description = "Budgets created for the account and each environment"
   value       = module.cost_controls.budget_names
 }
+
+# ---------------------------------------------------------------------------
+# Permissions boundary
+# ---------------------------------------------------------------------------
+
+# Every environment must pass this into the modules that create IAM roles. The
+# apply role is denied iam:CreateRole unless the new role carries this boundary,
+# so an environment that omits it fails at apply time rather than quietly
+# creating an unconstrained role.
+output "ci_permissions_boundary_arn" {
+  description = "Permissions boundary that every role created by CI must carry. Set as permissions_boundary_arn in each environment."
+  value       = aws_iam_policy.ci_boundary.arn
+}
