@@ -1,0 +1,38 @@
+region             = "eu-central-1"
+vpc_cidr_block     = "10.30.0.0/16"
+kubernetes_version = "1.34"
+
+# The API endpoint stays private. Reach it through a VPN, a peered network, or
+# an SSM port forward from a node.
+endpoint_public_access  = false
+api_public_access_cidrs = []
+
+cluster_admin_role_arns = [
+  "arn:aws:iam::000000000000:role/aws-platform-lab-production-apply",
+]
+
+cluster_viewer_role_arns = [
+  "arn:aws:iam::000000000000:role/Developer",
+]
+
+route53_hosted_zone_arns = [
+  "arn:aws:route53:::hostedzone/CHANGE_ME",
+]
+
+ecr_repositories = ["demo-api", "demo-web"]
+
+owner = "platform-engineering"
+
+alert_emails                = ["platform-oncall@example.com"]
+additional_alert_topic_arns = []
+
+# Turn on once the amazon-cloudwatch-observability add-on is installed.
+enable_container_insights = false
+
+# Vault Lock in governance mode. Recovery points cannot be deleted inside this
+# window; lifting the lock is an audited API call.
+backup_vault_lock_min_retention_days = 7
+
+# A single region backup does not survive a regional event. Create a vault in
+# a second region and point this at it.
+# backup_copy_destination_vault_arn = "arn:aws:backup:eu-west-1:000000000000:backup-vault:aws-platform-prod-dr"

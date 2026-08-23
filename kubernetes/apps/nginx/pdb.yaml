@@ -1,0 +1,13 @@
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: nginx
+  namespace: demo
+spec:
+  # Keeps at least two replicas serving while the cluster autoscaler drains a
+  # node or a node group rolls to a new AMI.
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app: nginx

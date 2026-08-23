@@ -1,0 +1,95 @@
+---
+# =========================================================
+# EKS platform bootstrap
+#
+# Terraform owns the cluster, the node groups, the add-ons and the IAM roles.
+# This playbook owns everything above the AWS API:
+#
+#   1. a kubeconfig backed by an IAM identity
+#   2. the platform controllers that EKS does not ship
+#   3. the storage policy
+#   4. Argo CD and the GitOps applications
+#   5. a validation pass that fails loudly rather than reporting success
+#
+# There is no SSH anywhere in this playbook. EKS has no host to bootstrap: the
+# control plane is managed and the nodes are joined by the managed node group,
+# so every task runs on the control host and talks to the AWS and Kubernetes
+# APIs.
+#
+#   ansible-playbook -i ansible/inventory/dev/hosts.yml \
+#     ansible/playbooks/site.yml
+#
+# Tags let a single stage be re-run, for example --tags eks_platform.
+# =========================================================
+
+- name: Bootstrap the EKS platform
+  hosts: aws_control_host
+  gather_facts: true
+  become: false
+
+  pre_tasks:
+
+    - name: Fail early when the environment is not configured
+      ansible.builtin.assert:
+        that:
+          - eks_cluster_name | default('') | length > 0
+          - aws_region | default('') | length > 0
+          - gitops_repo_url | default('') | length > 0
+        fail_msg: >-
+          eks_cluster_name, aws_region and gitops_repo_url must be set. They
+          live in ansible/inventory/<environment>/group_vars/all.yml.
+
+    - name: Report the target
+      ansible.builtin.debug:
+        msg: >-
+          Bootstrapping {{ eks_cluster_name }} in {{ aws_region }},
+          GitOps from {{ gitops_repo_url }}@{{ gitops_target_revision }}
+
+  roles:
+
+    # ---------------------------------------------------------
+    # Cluster access
+    # ---------------------------------------------------------
+    - role: eks_kubeconfig
+      tags:
+        - eks_kubeconfig
+
+    # ---------------------------------------------------------
+    # Platform controllers
+    # ---------------------------------------------------------
+    - role: eks_platform
+      tags:
+        - eks_platform
+
+    # ---------------------------------------------------------
+    # Storage
+    # ---------------------------------------------------------
+    - role: eks_storage
+      tags:
+        - eks_storage
+
+    # ---------------------------------------------------------
+    # GitOps
+    #
+    # After this point the cluster is changed by committing to Git. Running
+    # this playbook again is for upgrading the components above, not for
+    # deploying workloads.
+    # ---------------------------------------------------------
+    - role: argocd
+      tags:
+        - argocd
+
+    - role: argocd_bootstrap
+      tags:
+        - argocd_bootstrap
+
+    # ---------------------------------------------------------
+    # Validation
+    #
+    # Last, and never skipped in CI: a bootstrap that reports success without
+    # checking is the reason incidents start with "but the deploy was green".
+    # ---------------------------------------------------------
+    - role: eks_validate
+      tags:
+        - eks_validate
+        - validate

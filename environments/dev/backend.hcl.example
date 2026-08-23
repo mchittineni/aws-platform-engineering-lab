@@ -1,0 +1,6 @@
+# Backend configuration for: terraform init -backend-config=backend.hcl
+#
+# The bucket and KMS key are created by environments/bootstrap.
+bucket     = "CHANGE_ME-aws-platform-engineering-lab-tfstate"
+region     = "eu-central-1"
+kms_key_id = "arn:aws:kms:eu-central-1:000000000000:key/CHANGE_ME"

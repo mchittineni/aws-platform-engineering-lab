@@ -1,0 +1,18 @@
+---
+# gp3 with a Retain policy, for stateful workloads where losing the volume on
+# an accidental PVC delete is unacceptable. The default gp3 class created by
+# the eks_storage Ansible role uses Delete.
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: gp3-retain
+provisioner: ebs.csi.aws.com
+volumeBindingMode: WaitForFirstConsumer
+allowVolumeExpansion: true
+reclaimPolicy: Retain
+parameters:
+  type: gp3
+  iops: "3000"
+  throughput: "125"
+  encrypted: "true"
+  csi.storage.k8s.io/fstype: ext4

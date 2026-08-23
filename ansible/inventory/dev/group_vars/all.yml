@@ -1,0 +1,108 @@
+---
+# =========================================================
+# AWS dev environment
+#
+# These values mirror the Terraform outputs of environments/dev. Refresh them
+# with:
+#
+#   terraform -chdir=environments/dev output -json
+#
+# Anything that is an ARN comes from an environment variable rather than being
+# committed, because an ARN carries the account ID.
+# =========================================================
+
+aws_region: "eu-central-1"
+
+eks_cluster_name: "aws-platform-dev"
+
+# From: terraform output vpc_id
+eks_vpc_id: "{{ lookup('ansible.builtin.env', 'EKS_VPC_ID') }}"
+
+kubeconfig_path: "{{ lookup('ansible.builtin.env', 'HOME') }}/.kube/aws-platform-dev.config"
+
+
+# =========================================================
+# IRSA role ARNs
+#
+# From: terraform output -json platform_controller_role_arns
+# =========================================================
+
+aws_load_balancer_controller_role_arn: "{{ lookup('ansible.builtin.env', 'ALB_CONTROLLER_ROLE_ARN') }}"
+
+cluster_autoscaler_role_arn: "{{ lookup('ansible.builtin.env', 'CLUSTER_AUTOSCALER_ROLE_ARN') }}"
+
+external_secrets_role_arn: "{{ lookup('ansible.builtin.env', 'EXTERNAL_SECRETS_ROLE_ARN') }}"
+
+
+# =========================================================
+# Platform controllers
+#
+# dev keeps the surface small: no external-dns and no cert-manager, because
+# dev has no hostname worth a certificate.
+# =========================================================
+
+external_secrets_enabled: true
+external_dns_enabled: false
+cert_manager_enabled: false
+
+
+# =========================================================
+# Storage
+#
+# From: terraform output ebs_kms_key_arn
+# =========================================================
+
+eks_storage_kms_key_arn: "{{ lookup('ansible.builtin.env', 'EBS_KMS_KEY_ARN') }}"
+eks_storage_class_name: "gp3"
+eks_storage_reclaim_policy: "Delete"
+
+
+# =========================================================
+# Argo CD
+# =========================================================
+
+argocd_chart_version: "10.4.0"
+argocd_high_availability: false
+
+
+# =========================================================
+# Validation
+# =========================================================
+
+eks_validate_min_ready_nodes: 2
+
+
+# =========================================================
+# GitOps
+# =========================================================
+
+gitops_repo_url: "{{ lookup('ansible.builtin.env', 'GITOPS_REPO_URL') }}"
+gitops_target_revision: "main"
+
+kube_prometheus_stack_chart_version: "88.5.0"
+
+gitops_applications:
+  - name: platform
+    type: git
+    path: "kubernetes/platform"
+    namespace: platform
+
+  - name: storage
+    type: git
+    path: "kubernetes/storage"
+    namespace: kube-system
+
+  - name: demo-nginx
+    type: git
+    path: "kubernetes/apps/nginx"
+    namespace: demo
+
+  - name: monitoring
+    type: helm
+    chart: kube-prometheus-stack
+    chart_version: "88.5.0"
+    helm_repo_url: "https://prometheus-community.github.io/helm-charts"
+    values_paths:
+      - "kubernetes/monitoring/kube-prometheus-stack/values.yaml"
+      - "kubernetes/monitoring/kube-prometheus-stack/values-dev.yaml"
+    namespace: monitoring

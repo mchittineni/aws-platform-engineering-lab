@@ -1,0 +1,182 @@
+---
+# =========================================================
+# kube-prometheus-stack on EKS - base values
+#
+# This file holds everything that is true of every environment. Per
+# environment settings - cluster label, retention, volume sizes, ingress -
+# live in values-<environment>.yaml, which Argo CD layers on top.
+#
+# Two things are specific to a managed control plane:
+#
+#   - etcd, the scheduler, the controller manager and kube-proxy expose no
+#     scrapeable endpoint on EKS. Leaving those scrape jobs enabled produces
+#     permanently red targets that teach the team to ignore the targets page.
+#   - control plane logs and the metrics EKS does publish are read from
+#     CloudWatch, not scraped. The CloudWatch alarms in modules/observability
+#     are the out-of-cluster half of this stack.
+# =========================================================
+
+# ---------------------------------------------------------
+# Components with no reachable endpoint on EKS
+# ---------------------------------------------------------
+kubeProxy:
+  enabled: false
+
+kubeEtcd:
+  enabled: false
+
+kubeScheduler:
+  enabled: false
+
+kubeControllerManager:
+  enabled: false
+
+# The API server is reachable through the kubernetes service.
+kubeApiServer:
+  enabled: true
+
+kubelet:
+  enabled: true
+
+coreDns:
+  enabled: true
+
+kubeStateMetrics:
+  enabled: true
+
+nodeExporter:
+  enabled: true
+
+crds:
+  enabled: true
+  upgradeJob:
+    enabled: true
+    forceConflicts: true
+
+
+# ---------------------------------------------------------
+# Prometheus
+# ---------------------------------------------------------
+prometheus:
+  enabled: true
+
+  prometheusSpec:
+    # Evicting Prometheus during an incident is how a cluster loses the
+    # evidence of what went wrong.
+    priorityClassName: platform-observability
+
+    # WaitForFirstConsumer binding means the volume is created in whichever
+    # zone the pod lands in. An EBS volume cannot cross zones, so the pod is
+    # pinned to that zone from then on.
+    storageSpec:
+      volumeClaimTemplate:
+        spec:
+          storageClassName: gp3
+          accessModes:
+            - ReadWriteOnce
+          resources:
+            requests:
+              storage: 50Gi
+
+    resources:
+      requests:
+        cpu: 500m
+        memory: 2Gi
+      limits:
+        memory: 4Gi
+
+    # Spread replicas across zones when running more than one.
+    topologySpreadConstraints:
+      - maxSkew: 1
+        topologyKey: topology.kubernetes.io/zone
+        whenUnsatisfiable: ScheduleAnyway
+        labelSelector:
+          matchLabels:
+            app.kubernetes.io/name: prometheus
+
+    securityContext:
+      runAsNonRoot: true
+      runAsUser: 1000
+      fsGroup: 2000
+      seccompProfile:
+        type: RuntimeDefault
+
+    # Pick up ServiceMonitors and PrometheusRules from every namespace, not
+    # just the release namespace.
+    serviceMonitorSelectorNilUsesHelmValues: false
+    podMonitorSelectorNilUsesHelmValues: false
+    ruleSelectorNilUsesHelmValues: false
+
+    # externalLabels.cluster is set per environment. Without it, two clusters
+    # federating into the same store produce indistinguishable series.
+    externalLabels:
+      cloud: aws
+
+
+# ---------------------------------------------------------
+# Alertmanager
+# ---------------------------------------------------------
+alertmanager:
+  enabled: true
+
+  alertmanagerSpec:
+    priorityClassName: platform-observability
+
+    storage:
+      volumeClaimTemplate:
+        spec:
+          storageClassName: gp3
+          accessModes:
+            - ReadWriteOnce
+          resources:
+            requests:
+              storage: 10Gi
+
+    resources:
+      requests:
+        cpu: 50m
+        memory: 128Mi
+      limits:
+        memory: 256Mi
+
+
+# ---------------------------------------------------------
+# Grafana
+# ---------------------------------------------------------
+grafana:
+  enabled: true
+
+  priorityClassName: platform-observability
+
+  persistence:
+    enabled: true
+    storageClassName: gp3
+    size: 10Gi
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      memory: 512Mi
+
+  # Ingress is configured per environment, because the ALB group name and the
+  # scheme differ. Grafana has no authentication in front of it by default:
+  # put an OIDC proxy there before exposing it anywhere real.
+  ingress:
+    enabled: false
+
+
+# ---------------------------------------------------------
+# Alert rules
+#
+# The chart ships the kubernetes-mixin rules. The four disabled below have no
+# reachable target on EKS, so they would fire permanently.
+# ---------------------------------------------------------
+defaultRules:
+  create: true
+  disabled:
+    KubeControllerManagerDown: true
+    KubeSchedulerDown: true
+    KubeProxyDown: true
+    etcdMembersDown: true

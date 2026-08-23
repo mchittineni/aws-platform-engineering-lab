@@ -1,0 +1,52 @@
+---
+# =========================================================
+# Dynamic inventory for the EKS worker nodes
+#
+# Usage:
+#   ansible-inventory -i ansible/inventory/dev/aws_ec2.yml --graph
+#   ansible-playbook -i ansible/inventory/dev/aws_ec2.yml <playbook>
+#
+# Requires the amazon.aws collection and the boto3 library. Connections go
+# through Session Manager, so the nodes need no inbound SSH and no public IP.
+# =========================================================
+plugin: amazon.aws.aws_ec2
+
+regions:
+  - eu-central-1
+
+filters:
+  instance-state-name: running
+  "tag:Project": aws-platform-engineering-lab
+  "tag:Environment": dev
+
+# Group by the EKS cluster and node group tags the managed node group applies.
+keyed_groups:
+  - key: tags['eks:cluster-name']
+    prefix: eks_cluster
+    separator: "_"
+
+  - key: tags['eks:nodegroup-name']
+    prefix: eks_nodegroup
+    separator: "_"
+
+  - key: placement.availability_zone
+    prefix: az
+    separator: "_"
+
+  - key: instance_type
+    prefix: instance_type
+    separator: "_"
+
+hostnames:
+  - tag:Name
+  - private-ip-address
+
+compose:
+  ansible_host: private_ip_address
+
+# Instance state changes constantly in an autoscaled cluster; a short cache
+# keeps repeated runs fast without going stale.
+cache: true
+cache_plugin: jsonfile
+cache_timeout: 300
+cache_connection: /tmp/ansible-aws-ec2-inventory-dev

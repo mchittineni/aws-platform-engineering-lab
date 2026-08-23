@@ -1,0 +1,30 @@
+---
+# =========================================================
+# dev overlay
+#
+# Smallest footprint that still exercises the same code path as production.
+# =========================================================
+prometheus:
+  prometheusSpec:
+    replicas: 1
+    retention: 7d
+    retentionSize: 20GB
+
+    storageSpec:
+      volumeClaimTemplate:
+        spec:
+          resources:
+            requests:
+              storage: 25Gi
+
+    externalLabels:
+      cluster: aws-platform-dev
+      environment: dev
+
+alertmanager:
+  alertmanagerSpec:
+    replicas: 1
+
+grafana:
+  ingress:
+    enabled: false

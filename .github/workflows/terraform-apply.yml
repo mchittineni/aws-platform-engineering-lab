@@ -1,0 +1,105 @@
+---
+name: Terraform Apply
+
+# Apply is never automatic. It runs from the Actions tab against a protected
+# GitHub environment, which is also what the OIDC trust policy is scoped to:
+# the apply role can only be assumed by a run inside that environment.
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Environment to apply
+        required: true
+        type: choice
+        options:
+          - dev
+          - staging
+          - production
+      confirm:
+        description: Type the environment name again to confirm
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: terraform-apply-${{ inputs.environment }}
+  cancel-in-progress: false
+
+jobs:
+  apply:
+
+    runs-on: ubuntu-latest
+
+    # Reviewers and wait timers are configured on the GitHub environment, not
+    # here. That is what stops an unreviewed production apply.
+    environment: aws-${{ inputs.environment }}
+
+    steps:
+      - name: Verify the confirmation input
+        if: inputs.confirm != inputs.environment
+        run: |
+          echo "Confirmation '${{ inputs.confirm }}' does not match" \
+            "'${{ inputs.environment }}'." >&2
+          exit 1
+
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@e3dd6a429d7300a6a4c196c26e071d42e0343502  # v4.0.2
+        with:
+          role-to-assume: ${{ vars.AWS_APPLY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+          role-session-name: gha-apply-${{ inputs.environment }}-${{ github.run_id }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e  # v4.0.1
+        with:
+          terraform_version_file: .terraform-version
+
+      - name: Terraform Init
+        working-directory: environments/${{ inputs.environment }}
+        run: |
+          terraform init -input=false \
+            -backend-config="bucket=${{ vars.AWS_TF_STATE_BUCKET }}" \
+            -backend-config="region=${{ vars.AWS_REGION }}"
+
+      - name: Terraform Plan
+        working-directory: environments/${{ inputs.environment }}
+        run: |
+          set -o pipefail
+          terraform plan -input=false -no-color -out=tfplan | tee plan.txt
+
+      - name: Record the plan in the job summary
+        working-directory: environments/${{ inputs.environment }}
+        run: |
+          {
+            echo "### Plan applied to \`${{ inputs.environment }}\`"
+            echo
+            echo '```terraform'
+            tail -c 40000 plan.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # Applying the saved plan, not a fresh one, is what makes the reviewed
+      # plan and the executed change the same thing.
+      - name: Terraform Apply
+        working-directory: environments/${{ inputs.environment }}
+        run: terraform apply -input=false -no-color tfplan
+
+      - name: Terraform Output
+        working-directory: environments/${{ inputs.environment }}
+        run: terraform output -no-color
+
+      - name: Report a failed apply
+        if: failure()
+        run: |
+          {
+            echo "### Apply failed"
+            echo
+            echo "The state may be partially applied. Do not re-run blindly:"
+            echo "run a plan first and read it. See docs/operations.md."
+          } >> "$GITHUB_STEP_SUMMARY"

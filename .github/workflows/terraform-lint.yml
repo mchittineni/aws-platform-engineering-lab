@@ -1,0 +1,48 @@
+---
+name: Terraform Lint
+
+on:
+  pull_request:
+    paths:
+      - "**/*.tf"
+      - ".tflint.hcl"
+
+jobs:
+  tflint:
+
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        directory:
+          - environments/bootstrap
+          - environments/dev
+          - environments/staging
+          - environments/production
+          - modules/vpc
+          - modules/eks
+          - modules/eks-platform-iam
+          - modules/irsa
+          - modules/ecr
+          - modules/tf-state-backend
+          - modules/github-oidc
+          - modules/security-baseline
+          - modules/cost-controls
+          - modules/observability
+          - modules/backup
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+
+      - name: Setup TFLint
+        uses: terraform-linters/setup-tflint@19a52fbac37dacb22a09518e4ef6ee234f2d4987  # v4.0.0
+
+      - name: Initialise TFLint plugins
+        run: tflint --init
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+
+      - name: Run TFLint
+        run: tflint --chdir=${{ matrix.directory }} --format=compact

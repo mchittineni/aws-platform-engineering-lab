@@ -1,0 +1,89 @@
+---
+name: Terraform Security Scan
+
+on:
+  pull_request:
+    paths:
+      - "**/*.tf"
+      - "**/*.tftpl"
+      - ".github/workflows/terraform-security.yml"
+  # A finding can appear without the code changing, when a new rule ships.
+  schedule:
+    - cron: "0 6 * * 1"
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  tfsec:
+
+    runs-on: ubuntu-latest
+
+    steps:
+
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+
+      - name: tfsec
+        uses: aquasecurity/tfsec-sarif-action@21ded20e8ca120cd9d3d6ab04ef746477542a608  # v0.1.4
+        with:
+          sarif_file: tfsec.sarif
+
+      # Uploading to code scanning rather than only failing the job: a finding
+      # that is triaged and accepted stays visible instead of being silenced
+      # by a #tfsec:ignore nobody revisits.
+      - name: Upload the tfsec SARIF report
+        uses: github/codeql-action/upload-sarif@f1f6e5f6af878fb37288ce1c627459e94dbf7d01  # v3.28.5
+        with:
+          sarif_file: tfsec.sarif
+          category: tfsec
+
+      # The SARIF upload does not fail the build, so the gate is a second run.
+      - name: Fail on any tfsec finding
+        uses: aquasecurity/tfsec-action@b466648d6e39e7c75324f25d83891162a721f2d6  # v1.0.3
+        with:
+          soft_fail: false
+
+  checkov:
+
+    runs-on: ubuntu-latest
+
+    steps:
+
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+
+      - name: Checkov
+        uses: bridgecrewio/checkov-action@99bb2caf247dfd9f03cf984373bc6043d4e32ebf  # v12.1347.0
+        with:
+          directory: .
+          framework: terraform
+          quiet: true
+          output_format: cli,sarif
+          output_file_path: console,checkov.sarif
+
+      - name: Upload the Checkov SARIF report
+        if: always()
+        uses: github/codeql-action/upload-sarif@f1f6e5f6af878fb37288ce1c627459e94dbf7d01  # v3.28.5
+        with:
+          sarif_file: checkov.sarif
+          category: checkov
+
+  secrets:
+
+    runs-on: ubuntu-latest
+
+    steps:
+
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          # gitleaks needs the history to scan the commits in the pull request,
+          # not only the tree.
+          fetch-depth: 0
+
+      - name: gitleaks
+        uses: gitleaks/gitleaks-action@44c470ffc35caa8b1eb3e8012ca53c2f9bea4eb5  # v8.27.2
+        env:
+          GITHUB_TOKEN: ${{ github.token }}

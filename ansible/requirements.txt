@@ -1,0 +1,17 @@
+# Python packages the control host needs. The collections in
+# requirements.yml are thin wrappers; these do the work.
+#
+#   python3 -m pip install -r ansible/requirements.txt
+#   ansible-galaxy collection install -r ansible/requirements.yml
+
+ansible-core>=2.18,<2.20
+
+# kubernetes.core
+kubernetes>=31.0.0
+
+# amazon.aws and the aws_ec2 inventory plugin
+boto3>=1.35.0
+botocore>=1.35.0
+
+# kubernetes.core.helm shells out to the helm binary, which is not a Python
+# package: install it separately.

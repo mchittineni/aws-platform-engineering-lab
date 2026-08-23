@@ -1,0 +1,57 @@
+---
+# =========================================================
+# Namespace resource governance
+#
+# A LimitRange is what stops a pod with no resource requests from landing on a
+# node and starving it. A ResourceQuota is what stops a broken controller from
+# creating four hundred of them.
+#
+# These live with the application rather than in kubernetes/platform because
+# they are namespace scoped: Argo CD applies them in the same wave as the
+# namespace they govern, which removes a cross-application ordering problem.
+# =========================================================
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: defaults
+  namespace: demo
+spec:
+  limits:
+    - type: Container
+      # Applied to any container that does not set its own.
+      default:
+        cpu: 200m
+        memory: 256Mi
+      defaultRequest:
+        cpu: 50m
+        memory: 64Mi
+      max:
+        cpu: "2"
+        memory: 2Gi
+      min:
+        cpu: 10m
+        memory: 16Mi
+    - type: PersistentVolumeClaim
+      max:
+        storage: 50Gi
+      min:
+        storage: 1Gi
+---
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: demo
+  namespace: demo
+spec:
+  hard:
+    requests.cpu: "4"
+    requests.memory: 8Gi
+    limits.cpu: "8"
+    limits.memory: 16Gi
+    persistentvolumeclaims: "10"
+    requests.storage: 100Gi
+    pods: "50"
+    # An unbounded LoadBalancer count is an unbounded bill. Ingress through
+    # the shared ALB is the intended path.
+    services.loadbalancers: "0"
+    services.nodeports: "0"

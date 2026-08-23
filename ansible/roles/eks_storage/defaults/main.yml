@@ -1,0 +1,18 @@
+---
+# gp3 is cheaper than gp2 at every size and decouples IOPS from capacity, so
+# it is the only StorageClass this platform offers by default.
+eks_storage_class_name: gp3
+eks_storage_iops: 3000
+eks_storage_throughput: 125
+
+# Retain keeps the EBS volume when a PVC is deleted. Safer for stateful
+# platform components; application charts can ask for a Delete class.
+eks_storage_reclaim_policy: Delete
+
+# ARN of the KMS key the CSI driver encrypts volumes with. Comes from the
+# ebs_kms_key_arn Terraform output.
+eks_storage_kms_key_arn: ""
+
+# Remove the default annotation from the gp2 class EKS ships with, so a PVC
+# without a storageClassName lands on gp3.
+eks_storage_demote_gp2: true

@@ -1,0 +1,83 @@
+---
+# Path to the kubeconfig used to talk to the cluster. Written by the
+# eks_kubeconfig role and overridden per environment in group_vars.
+kubeconfig_path: "{{ lookup('ansible.builtin.env', 'HOME') }}/.kube/config"
+
+argocd_namespace: argocd
+
+# Pinned rather than latest: an unpinned chart version means the next run can
+# upgrade Argo CD without anybody deciding to.
+argocd_chart_version: "10.4.0"
+
+# High availability runs Redis as a three node cluster and two replicas of
+# every controller. Worth it in production, wasteful in dev.
+argocd_high_availability: false
+
+# Extra Helm values merged over the defaults below, for per environment
+# overrides such as ingress or SSO.
+argocd_extra_values: {}
+
+argocd_default_values:
+  global:
+    # Argo CD is how the platform is changed. If it is evicted under node
+    # pressure, nothing can be deployed to fix the pressure.
+    #
+    # The class is created by the eks_platform role, which runs before this
+    # one. The API server rejects a pod naming a priority class that does not
+    # exist, so the ordering in playbooks/site.yml is load bearing.
+    priorityClassName: platform-critical
+
+  configs:
+    params:
+      # TLS terminates at the ALB, so the server itself runs plaintext behind
+      # it. Without this the ALB health check fails on a TLS handshake.
+      server.insecure: true
+
+    cm:
+      # Stop a stale Application from being resynced forever after its source
+      # path is deleted.
+      application.resourceTrackingMethod: annotation
+      timeout.reconciliation: 180s
+
+  controller:
+    replicas: 1
+    resources:
+      requests:
+        cpu: 250m
+        memory: 512Mi
+      limits:
+        memory: 2Gi
+
+  repoServer:
+    replicas: 2
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits:
+        memory: 1Gi
+    # Spread the replicas so draining one node does not stop every sync.
+    topologySpreadConstraints:
+      - maxSkew: 1
+        topologyKey: topology.kubernetes.io/zone
+        whenUnsatisfiable: ScheduleAnyway
+        labelSelector:
+          matchLabels:
+            app.kubernetes.io/name: argocd-repo-server
+
+  server:
+    replicas: 2
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+      limits:
+        memory: 512Mi
+
+  applicationSet:
+    replicas: 2
+
+  dex:
+    # No SSO configured yet, so the component would sit idle. Enable it with
+    # argocd_extra_values when an identity provider exists.
+    enabled: false

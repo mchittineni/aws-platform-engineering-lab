@@ -1,0 +1,167 @@
+---
+# =========================================================
+# Argo CD GitOps bootstrap
+#
+# Creates one Argo CD Application per entry in gitops_applications. Two source
+# shapes are supported:
+#
+#   type: git   - plain manifests from a path in this repository
+#   type: helm  - an upstream chart, with values files read from this
+#                 repository through a second `ref` source
+#
+# Everything past this point is changed by committing to Git, not by running
+# Ansible again.
+# =========================================================
+
+- name: Fail early on a malformed application definition
+  ansible.builtin.assert:
+    that:
+      - item.name is defined
+      - item.namespace is defined
+      - item.type in ['git', 'helm']
+      - item.type != 'git' or item.path is defined
+      - item.type != 'helm' or (item.chart is defined and item.helm_repo_url is defined and item.chart_version is defined)
+    fail_msg: >-
+      Invalid gitops_applications entry: {{ item | to_json }}.
+      A git entry needs name, namespace and path. A helm entry needs name,
+      namespace, chart, chart_version and helm_repo_url.
+  loop: "{{ gitops_applications }}"
+  loop_control:
+    label: "{{ item.name | default('unnamed') }}"
+
+
+- name: Create Git-based Argo CD Applications
+  kubernetes.core.k8s:
+    state: present
+    kubeconfig: "{{ kubeconfig_path }}"
+    definition:
+      apiVersion: argoproj.io/v1alpha1
+      kind: Application
+      metadata:
+        name: "{{ item.name }}"
+        namespace: "{{ argocd_namespace }}"
+        finalizers:
+          # Without this, deleting the Application leaves every resource it
+          # created running in the cluster.
+          - resources-finalizer.argocd.argoproj.io
+      spec:
+        project: "{{ argocd_project }}"
+
+        source:
+          repoURL: "{{ gitops_repo_url }}"
+          targetRevision: "{{ gitops_target_revision }}"
+          path: "{{ item.path }}"
+
+        destination:
+          server: https://kubernetes.default.svc
+          namespace: "{{ item.namespace }}"
+
+        syncPolicy:
+          automated:
+            prune: "{{ item.prune | default(gitops_automated_prune) }}"
+            selfHeal: "{{ item.self_heal | default(gitops_automated_self_heal) }}"
+          syncOptions:
+            - CreateNamespace=true
+            - ServerSideApply=true
+          retry:
+            limit: 5
+            backoff:
+              duration: 10s
+              factor: 2
+              maxDuration: 5m
+  loop: "{{ gitops_applications }}"
+  loop_control:
+    label: "{{ item.name }}"
+  when: item.type == "git"
+
+
+- name: Create Helm-based Argo CD Applications
+  kubernetes.core.k8s:
+    state: present
+    kubeconfig: "{{ kubeconfig_path }}"
+    definition:
+      apiVersion: argoproj.io/v1alpha1
+      kind: Application
+      metadata:
+        name: "{{ item.name }}"
+        namespace: "{{ argocd_namespace }}"
+        finalizers:
+          - resources-finalizer.argocd.argoproj.io
+      spec:
+        project: "{{ argocd_project }}"
+
+        sources:
+          - repoURL: "{{ item.helm_repo_url }}"
+            chart: "{{ item.chart }}"
+            targetRevision: "{{ item.chart_version }}"
+            helm:
+              # Later files win, so a base file plus a per environment
+              # overlay behaves the way helm -f a.yaml -f b.yaml does.
+              valueFiles: >-
+                {{
+                  (item.values_paths | default([item.values_path]))
+                  | map('regex_replace', '^', '$values/')
+                  | list
+                }}
+
+          - repoURL: "{{ gitops_repo_url }}"
+            targetRevision: "{{ gitops_target_revision }}"
+            ref: values
+
+        destination:
+          server: https://kubernetes.default.svc
+          namespace: "{{ item.namespace }}"
+
+        syncPolicy:
+          automated:
+            prune: "{{ item.prune | default(gitops_automated_prune) }}"
+            selfHeal: "{{ item.self_heal | default(gitops_automated_self_heal) }}"
+          syncOptions:
+            - CreateNamespace=true
+            # Large CRDs such as the Prometheus Operator's exceed the
+            # annotation size limit that client-side apply relies on.
+            - ServerSideApply=true
+          retry:
+            limit: 5
+            backoff:
+              duration: 10s
+              factor: 2
+              maxDuration: 5m
+  loop: "{{ gitops_applications }}"
+  loop_control:
+    label: "{{ item.name }}"
+  when: item.type == "helm"
+
+
+# =========================================================
+# Wait for every Application to converge
+#
+# One loop for both source types: the status contract is identical, and a
+# single loop means a Helm application cannot be silently skipped.
+# =========================================================
+
+- name: Wait for the Applications to become Synced and Healthy
+  kubernetes.core.k8s_info:
+    api_version: argoproj.io/v1alpha1
+    kind: Application
+    namespace: "{{ argocd_namespace }}"
+    name: "{{ item.name }}"
+    kubeconfig: "{{ kubeconfig_path }}"
+  register: application_status
+  until:
+    - application_status.resources | default([]) | length > 0
+    - application_status.resources[0].status.sync.status | default('') == 'Synced'
+    - application_status.resources[0].status.health.status | default('') == 'Healthy'
+  retries: "{{ gitops_sync_retries }}"
+  delay: "{{ gitops_sync_delay }}"
+  loop: "{{ gitops_applications }}"
+  loop_control:
+    label: "{{ item.name }}"
+  when: not ansible_check_mode
+
+
+- name: Report the deployed applications
+  ansible.builtin.debug:
+    msg: >-
+      {{ gitops_applications | length }} Argo CD Application(s) synced:
+      {{ gitops_applications | map(attribute='name') | join(', ') }}

@@ -1,0 +1,28 @@
+---
+# =========================================================
+# gp3 with AWS Backup selection
+#
+# The backup plan in modules/backup selects volumes by tag. The CSI driver
+# copies tagSpecification_N parameters onto the EBS volume it creates, so
+# choosing this class is how a PVC opts into the backup plan.
+#
+# Retain, not Delete: a volume worth backing up is a volume worth keeping when
+# somebody deletes the PVC by mistake.
+# =========================================================
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: gp3-backup
+provisioner: ebs.csi.aws.com
+volumeBindingMode: WaitForFirstConsumer
+allowVolumeExpansion: true
+reclaimPolicy: Retain
+parameters:
+  type: gp3
+  iops: "3000"
+  throughput: "125"
+  encrypted: "true"
+  csi.storage.k8s.io/fstype: ext4
+  tagSpecification_1: "platform.aws/backup=true"
+  tagSpecification_2: "platform.aws/pvc={{ .PVCName }}"
+  tagSpecification_3: "platform.aws/namespace={{ .PVCNamespace }}"

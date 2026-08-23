@@ -1,0 +1,140 @@
+---
+name: Terraform Plan
+
+on:
+  pull_request:
+    paths:
+      - "environments/**"
+      - "modules/**"
+      - ".github/workflows/terraform-plan.yml"
+
+# Short lived credentials from the GitHub OIDC provider. No AWS access key is
+# stored in this repository.
+permissions:
+  contents: read
+  id-token: write
+  pull-requests: write
+
+concurrency:
+  group: terraform-plan-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  plan:
+
+    # Skipped entirely until the bootstrap stack has been applied and the
+    # repository variables below are populated.
+    if: vars.AWS_REGION != ''
+
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - environment: dev
+            directory: environments/dev
+            role_var: AWS_DEV_PLAN_ROLE_ARN
+          - environment: staging
+            directory: environments/staging
+            role_var: AWS_STAGING_PLAN_ROLE_ARN
+          - environment: production
+            directory: environments/production
+            role_var: AWS_PRODUCTION_PLAN_ROLE_ARN
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@e3dd6a429d7300a6a4c196c26e071d42e0343502  # v4.0.2
+        with:
+          role-to-assume: ${{ vars[matrix.role_var] }}
+          aws-region: ${{ vars.AWS_REGION }}
+          role-session-name: gha-plan-${{ matrix.environment }}-${{ github.run_id }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e  # v4.0.1
+        with:
+          terraform_version_file: .terraform-version
+
+      - name: Terraform Init
+        working-directory: ${{ matrix.directory }}
+        run: |
+          terraform init -input=false \
+            -backend-config="bucket=${{ vars.AWS_TF_STATE_BUCKET }}" \
+            -backend-config="region=${{ vars.AWS_REGION }}"
+
+      # -lock=false because a plan does not mutate state, and a pull request
+      # plan must never block a concurrent apply.
+      - name: Terraform Plan
+        id: plan
+        working-directory: ${{ matrix.directory }}
+        run: |
+          set -o pipefail
+          terraform plan -input=false -lock=false -no-color \
+            -out=tfplan | tee plan.txt
+        continue-on-error: true
+
+      # A job summary as well as the comment: the comment is for the reviewer,
+      # the summary is what is still there after the branch is deleted.
+      - name: Summarise the plan
+        if: always()
+        working-directory: ${{ matrix.directory }}
+        run: |
+          {
+            echo "### Terraform plan — \`${{ matrix.environment }}\`"
+            echo
+            echo '```terraform'
+            tail -c 40000 plan.txt || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Comment the plan on the pull request
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea  # v7.0.1
+        with:
+          script: |
+            const fs = require('fs');
+            const path = '${{ matrix.directory }}/plan.txt';
+            const environment = '${{ matrix.environment }}';
+            const marker = `<!-- terraform-plan:${environment} -->`;
+            let body = `${marker}\n### Terraform plan — \`${environment}\`\n\nNo plan output was produced.`;
+            try {
+              const raw = fs.readFileSync(path, 'utf8');
+              // GitHub caps a comment at 65536 characters.
+              const clipped = raw.length > 55000 ? '...(truncated)\n' + raw.slice(-55000) : raw;
+              body = [
+                marker,
+                `### Terraform plan — \`${environment}\``,
+                '',
+                'Outcome: `${{ steps.plan.outcome }}`',
+                '',
+                '<details><summary>Plan output</summary>',
+                '',
+                '```terraform',
+                clipped,
+                '```',
+                '',
+                '</details>',
+              ].join('\n');
+            } catch (error) {
+              core.warning(`No plan output for ${environment}: ${error.message}`);
+            }
+            // Update the existing comment rather than adding one per push, so
+            // a long-lived pull request does not accumulate twenty plans.
+            const { owner, repo } = context.repo;
+            const issue_number = context.issue.number;
+            const comments = await github.paginate(
+              github.rest.issues.listComments, { owner, repo, issue_number });
+            const existing = comments.find(c => c.body && c.body.includes(marker));
+            if (existing) {
+              await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body });
+            } else {
+              await github.rest.issues.createComment({ owner, repo, issue_number, body });
+            }
+
+      - name: Fail the job when the plan failed
+        if: steps.plan.outcome == 'failure'
+        run: |
+          echo "terraform plan failed for ${{ matrix.environment }}." >&2
+          exit 1

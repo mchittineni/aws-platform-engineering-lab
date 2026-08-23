@@ -1,0 +1,84 @@
+---
+# =========================================================
+# AWS Load Balancer Controller
+#
+# The in-tree AWS cloud provider only creates classic and network load
+# balancers for Services. Ingress and target-group-per-pod need this
+# controller.
+# =========================================================
+aws_load_balancer_controller_enabled: true
+aws_load_balancer_controller_chart_version: "1.14.0"
+aws_load_balancer_controller_replicas: 2
+
+# IRSA role ARN from the platform_controller_role_arns Terraform output.
+aws_load_balancer_controller_role_arn: ""
+
+
+# =========================================================
+# metrics-server
+#
+# EKS does not ship it, and without it kubectl top and every
+# HorizontalPodAutoscaler based on CPU or memory silently fail.
+# =========================================================
+metrics_server_enabled: true
+metrics_server_chart_version: "3.14.0"
+
+
+# =========================================================
+# Cluster autoscaler
+# =========================================================
+cluster_autoscaler_enabled: true
+cluster_autoscaler_chart_version: "9.53.0"
+cluster_autoscaler_role_arn: ""
+
+
+# =========================================================
+# External Secrets Operator
+#
+# Terraform creates the IRSA role for this in every environment. Without the
+# operator installed, that role exists and nothing assumes it, and secrets end
+# up being applied by hand.
+# =========================================================
+external_secrets_enabled: false
+external_secrets_chart_version: "0.20.4"
+external_secrets_role_arn: ""
+
+# Creates a cluster wide SecretStore pointing at Secrets Manager in this
+# region, so an ExternalSecret only has to name the secret.
+external_secrets_create_cluster_store: true
+external_secrets_store_name: aws-secrets-manager
+
+
+# =========================================================
+# external-dns
+#
+# Keeps Route 53 records in step with Ingress and Service objects. Scoped to
+# one owner ID so two clusters sharing a hosted zone cannot delete each
+# other's records.
+# =========================================================
+external_dns_enabled: false
+external_dns_chart_version: "1.19.0"
+external_dns_role_arn: ""
+external_dns_domain_filters: []
+external_dns_policy: upsert-only
+
+
+# =========================================================
+# cert-manager
+#
+# DNS-01 through Route 53, because HTTP-01 cannot issue for an internal ALB
+# that the ACME server cannot reach.
+# =========================================================
+cert_manager_enabled: false
+cert_manager_chart_version: "1.19.1"
+cert_manager_role_arn: ""
+cert_manager_namespace: cert-manager
+cert_manager_acme_email: ""
+cert_manager_acme_server: https://acme-v02.api.letsencrypt.org/directory
+cert_manager_route53_hosted_zone_id: ""
+
+
+# =========================================================
+# Shared
+# =========================================================
+platform_priority_class: platform-critical

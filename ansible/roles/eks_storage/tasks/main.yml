@@ -1,0 +1,95 @@
+---
+# =========================================================
+# EKS storage
+#
+# Terraform installed the aws-ebs-csi-driver add-on with its own IRSA role and
+# a KMS grant. What is left is the StorageClass policy: which class is the
+# default, what it provisions, and whether deleting a PVC destroys the data.
+# =========================================================
+
+- name: Wait for the EBS CSI driver to be ready
+  kubernetes.core.k8s_info:
+    api_version: apps/v1
+    kind: Deployment
+    namespace: kube-system
+    name: ebs-csi-controller
+    kubeconfig: "{{ kubeconfig_path }}"
+  register: ebs_csi_controller
+  retries: 30
+  delay: 10
+  until:
+    - ebs_csi_controller.resources | default([]) | length > 0
+    - (ebs_csi_controller.resources[0].status.readyReplicas | default(0)) > 0
+  when: not ansible_check_mode
+
+
+# StorageClass parameters are all strings in the Kubernetes API, and kmsKeyId
+# must be absent rather than empty when no key was supplied.
+- name: Build the StorageClass parameters
+  ansible.builtin.set_fact:
+    eks_storage_parameters: >-
+      {{
+        base_parameters | combine(kms_parameter)
+      }}
+  vars:
+    base_parameters:
+      type: gp3
+      iops: "{{ eks_storage_iops | string }}"
+      throughput: "{{ eks_storage_throughput | string }}"
+      encrypted: "true"
+      csi.storage.k8s.io/fstype: ext4
+    kms_parameter: >-
+      {{
+        {'kmsKeyId': eks_storage_kms_key_arn}
+        if eks_storage_kms_key_arn | length > 0
+        else {}
+      }}
+
+
+- name: Create the gp3 StorageClass
+  kubernetes.core.k8s:
+    state: present
+    kubeconfig: "{{ kubeconfig_path }}"
+    definition:
+      apiVersion: storage.k8s.io/v1
+      kind: StorageClass
+      metadata:
+        name: "{{ eks_storage_class_name }}"
+        annotations:
+          storageclass.kubernetes.io/is-default-class: "true"
+      provisioner: ebs.csi.aws.com
+      # WaitForFirstConsumer stops the volume from being created in an
+      # availability zone the pod cannot be scheduled in.
+      volumeBindingMode: WaitForFirstConsumer
+      allowVolumeExpansion: true
+      reclaimPolicy: "{{ eks_storage_reclaim_policy }}"
+      parameters: "{{ eks_storage_parameters }}"
+
+
+- name: Check whether the gp2 StorageClass exists
+  kubernetes.core.k8s_info:
+    api_version: storage.k8s.io/v1
+    kind: StorageClass
+    name: gp2
+    kubeconfig: "{{ kubeconfig_path }}"
+  register: gp2_storage_class
+  when: eks_storage_demote_gp2
+
+
+- name: Remove the default annotation from the gp2 StorageClass
+  kubernetes.core.k8s:
+    state: patched
+    kind: StorageClass
+    api_version: storage.k8s.io/v1
+    name: gp2
+    kubeconfig: "{{ kubeconfig_path }}"
+    definition:
+      metadata:
+        annotations:
+          storageclass.kubernetes.io/is-default-class: "false"
+  when:
+    - eks_storage_demote_gp2
+    - gp2_storage_class.resources | default([]) | length > 0
+    - >-
+      (gp2_storage_class.resources[0].metadata.annotations | default({}))
+      ['storageclass.kubernetes.io/is-default-class'] | default('false') == 'true'

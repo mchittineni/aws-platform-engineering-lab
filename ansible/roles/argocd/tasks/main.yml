@@ -1,0 +1,77 @@
+---
+# =========================================================
+# Argo CD
+#
+# Installed by Ansible, not by Argo CD, because something has to create the
+# thing that creates everything else. From here on every change to the
+# cluster goes through Git.
+# =========================================================
+
+- name: Add Argo CD Helm repository
+  kubernetes.core.helm_repository:
+    name: argo
+    repo_url: https://argoproj.github.io/argo-helm
+  become: false
+
+
+- name: Build the Argo CD values
+  ansible.builtin.set_fact:
+    argocd_values: >-
+      {{
+        argocd_default_values
+        | combine(argocd_ha_values, recursive=True)
+        | combine(argocd_extra_values, recursive=True)
+      }}
+  vars:
+    argocd_ha_values: >-
+      {{
+        {
+          'redis-ha': {'enabled': true},
+          'controller': {'replicas': 2},
+          'repoServer': {'replicas': 3},
+          'server': {'replicas': 3},
+        }
+        if argocd_high_availability
+        else {}
+      }}
+
+
+- name: Install Argo CD
+  kubernetes.core.helm:
+    name: argo-cd
+    chart_ref: argo/argo-cd
+    release_namespace: "{{ argocd_namespace }}"
+    create_namespace: true
+    chart_version: "{{ argocd_chart_version }}"
+    state: present
+    kubeconfig: "{{ kubeconfig_path }}"
+    values: "{{ argocd_values }}"
+    wait: true
+    wait_timeout: 10m
+
+
+# Waiting on the Deployment rather than a Running pod: a pod can be Running
+# and still failing its readiness probe, which means the API is not up.
+- name: Wait for the Argo CD server to become available
+  kubernetes.core.k8s_info:
+    api_version: apps/v1
+    kind: Deployment
+    namespace: "{{ argocd_namespace }}"
+    name: argo-cd-argocd-server
+    kubeconfig: "{{ kubeconfig_path }}"
+  register: argocd_server
+  until:
+    - argocd_server.resources | default([]) | length > 0
+    - (argocd_server.resources[0].status.readyReplicas | default(0)) > 0
+  retries: 30
+  delay: 10
+  when: not ansible_check_mode
+
+
+- name: Report how to reach Argo CD
+  ansible.builtin.debug:
+    msg: >-
+      Argo CD is up. Port forward with:
+      kubectl --kubeconfig {{ kubeconfig_path }} -n {{ argocd_namespace }}
+      port-forward svc/argo-cd-argocd-server 8080:80 — the initial admin
+      password is in the argocd-initial-admin-secret Secret.
