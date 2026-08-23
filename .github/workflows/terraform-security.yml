@@ -34,7 +34,7 @@ jobs:
       # that is triaged and accepted stays visible instead of being silenced
       # by a #tfsec:ignore nobody revisits.
       - name: Upload the tfsec SARIF report
-        uses: github/codeql-action/upload-sarif@f1f6e5f6af878fb37288ce1c627459e94dbf7d01  # v3.28.5
+        uses: github/codeql-action/upload-sarif@ff2f1c621b7f889edc0d3c761ac2e6a3f8cdb0dd  # v3.28.5
         with:
           sarif_file: tfsec.sarif
           category: tfsec
@@ -55,7 +55,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
       - name: Checkov
-        uses: bridgecrewio/checkov-action@99bb2caf247dfd9f03cf984373bc6043d4e32ebf  # v12.1347.0
+        uses: bridgecrewio/checkov-action@59b9d7edfcad5b87fbe3f473a9a134a721ad03f8  # v12.3119.0
         with:
           directory: .
           framework: terraform
@@ -65,7 +65,7 @@ jobs:
 
       - name: Upload the Checkov SARIF report
         if: always()
-        uses: github/codeql-action/upload-sarif@f1f6e5f6af878fb37288ce1c627459e94dbf7d01  # v3.28.5
+        uses: github/codeql-action/upload-sarif@ff2f1c621b7f889edc0d3c761ac2e6a3f8cdb0dd  # v3.28.5
         with:
           sarif_file: checkov.sarif
           category: checkov
@@ -84,6 +84,6 @@ jobs:
           fetch-depth: 0
 
       - name: gitleaks
-        uses: gitleaks/gitleaks-action@44c470ffc35caa8b1eb3e8012ca53c2f9bea4eb5  # v8.27.2
+        uses: gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e  # v8.27.2
         env:
           GITHUB_TOKEN: ${{ github.token }}
