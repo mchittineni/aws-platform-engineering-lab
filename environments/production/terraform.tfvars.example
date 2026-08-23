@@ -36,3 +36,8 @@ backup_vault_lock_min_retention_days = 7
 # A single region backup does not survive a regional event. Create a vault in
 # a second region and point this at it.
 # backup_copy_destination_vault_arn = "arn:aws:backup:eu-west-1:000000000000:backup-vault:aws-platform-prod-dr"
+
+# Permissions boundary every IAM role in this environment must carry. Take the
+# value from the bootstrap output `ci_permissions_boundary_arn`. Required when
+# this environment is applied by CI.
+# permissions_boundary_arn = "arn:aws:iam::123456789012:policy/aws-platform-lab-ci-boundary"
