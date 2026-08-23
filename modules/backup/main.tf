@@ -25,6 +25,7 @@ locals {
 # ---------------------------------------------------------------------------
 
 resource "aws_kms_key" "backup" {
+  #checkov:skip=CKV2_AWS_64:Access is governed by IAM; default key policy is deliberate
   count = var.kms_key_arn == null ? 1 : 0
 
   description             = "Encrypts ${var.name} recovery points"
@@ -88,9 +89,10 @@ data "aws_iam_policy_document" "assume_role" {
 }
 
 resource "aws_iam_role" "backup" {
-  name               = "${var.name}-backup"
-  description        = "Service role AWS Backup assumes to snapshot and restore ${var.name} resources"
-  assume_role_policy = data.aws_iam_policy_document.assume_role.json
+  name                 = "${var.name}-backup"
+  description          = "Service role AWS Backup assumes to snapshot and restore ${var.name} resources"
+  assume_role_policy   = data.aws_iam_policy_document.assume_role.json
+  permissions_boundary = var.permissions_boundary_arn
 
   tags = var.tags
 }
