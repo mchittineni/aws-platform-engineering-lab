@@ -1,5 +1,35 @@
 ---
 default: true
 
+# Prose wraps at 80 in this repository, but tables and fenced blocks cannot be
+# wrapped without changing what they mean, so the limit applies to prose only.
 MD013:
   line_length: 150
+  code_blocks: false
+  tables: false
+  headings: false
+
+# One style per document class, chosen rather than inferred, so a reformat never
+# shows up as unrelated diff noise.
+MD004:
+  style: dash
+
+MD035:
+  style: "---"
+
+MD046:
+  style: fenced
+
+MD048:
+  style: backtick
+
+MD049:
+  style: asterisk
+
+MD050:
+  style: asterisk
+
+# Duplicate headings are legitimate under different parents: several docs have a
+# "Why" or a "Rollback" section per topic.
+MD024:
+  siblings_only: true
