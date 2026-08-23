@@ -13,6 +13,15 @@ repos:
       - id: check-case-conflict
       - id: check-symlinks
       - id: detect-private-key
+
+      # The one secret this repository is most likely to leak is the one it
+      # claims not to contain. --allow-missing-credentials so the hook does not
+      # fail on a machine that has never configured the AWS CLI.
+      - id: detect-aws-credentials
+        args: ["--allow-missing-credentials"]
+
+      - id: check-executables-have-shebangs
+      - id: forbid-submodules
       - id: end-of-file-fixer
       - id: trailing-whitespace
       - id: mixed-line-ending
@@ -58,7 +67,7 @@ repos:
       - id: tfsec
 
   - repo: https://github.com/bridgecrewio/checkov
-    rev: 3.2.492
+    rev: 3.3.13
     hooks:
       - id: checkov
         args: ["--framework", "terraform", "--quiet", "--compact"]
@@ -76,8 +85,10 @@ repos:
   ########################################
   # Ansible
   ########################################
+  # Reads .ansible-lint, which scopes it to Ansible content and keeps
+  # var-naming[no-role-prefix] as a warning rather than a failure.
   - repo: https://github.com/ansible/ansible-lint
-    rev: v25.9.2
+    rev: v26.8.0
     hooks:
       - id: ansible-lint
 
@@ -86,7 +97,7 @@ repos:
   # GitHub Actions
   ########################################
   - repo: https://github.com/rhysd/actionlint
-    rev: v1.7.7
+    rev: v1.7.12
     hooks:
       - id: actionlint
 
