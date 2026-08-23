@@ -218,7 +218,7 @@ data, not the PVC that pointed at it. See
 
 | Stage | Control |
 | --- | --- |
-| Every PR | `terraform fmt`, `validate`, `tflint`, `tfsec`, Checkov, gitleaks, actionlint |
+| Every PR | `terraform fmt`, `validate`, `tflint`, `tfsec`, Checkov |
 | Every PR | kubeconform against the 1.34 schemas, plus Checkov container isolation policies |
 | Every PR | ansible-lint, and a syntax check of every environment's playbook |
 | Every PR touching AWS | Read-only plan per environment, scoped to that environment's state prefix, as one sticky comment |
@@ -228,7 +228,15 @@ data, not the PVC that pointed at it. See
 | Weekly | tfsec re-run on a schedule, because a finding can appear when a rule ships rather than when code changes |
 | Weekly | Dependabot on GitHub Actions, Terraform providers and the Python requirements |
 
-tfsec and Checkov results are uploaded as SARIF to code scanning as well as
+`gitleaks`, `actionlint`, `yamllint` and `markdownlint` run through
+`.pre-commit-config.yaml` on a developer machine and are **not** enforced in CI:
+the workflows that ran them have been removed. `make ci` still runs the
+Terraform, Kubernetes and Ansible gates. Install the hooks with `pre-commit
+install` — for secret scanning in particular, a hook that runs before the commit
+is the only version that helps, because CI sees the secret after it is already
+in the history.
+
+tfsec results are uploaded as SARIF to code scanning as well as
 failing the job, so an accepted finding stays visible instead of being silenced
 by a `#tfsec:ignore` nobody revisits.
 
