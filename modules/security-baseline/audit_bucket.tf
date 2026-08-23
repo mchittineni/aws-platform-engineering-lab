@@ -21,6 +21,13 @@ resource "aws_kms_alias" "audit" {
 }
 
 data "aws_iam_policy_document" "audit_kms" {
+  # Inside a KMS key policy, Resource "*" means "the key this policy is
+  # attached to" — it cannot be narrowed to an ARN, because the key does not
+  # exist yet when the policy is written. The wildcard checks below read that
+  # as an unconstrained grant, which for a key policy it is not.
+  #checkov:skip=CKV_AWS_109:Resource "*" in a key policy means this key only
+  #checkov:skip=CKV_AWS_111:Resource "*" in a key policy means this key only
+  #checkov:skip=CKV_AWS_356:Resource "*" in a key policy means this key only
   statement {
     sid       = "AllowAccountAdministration"
     effect    = "Allow"
@@ -89,6 +96,12 @@ data "aws_iam_policy_document" "audit_kms" {
 # access logs and does not need a second bucket.
 #tfsec:ignore:aws-s3-enable-bucket-logging
 resource "aws_s3_bucket" "audit" {
+  # Access logging on the audit bucket would need a second log bucket that
+  # itself cannot be logged, which moves the problem rather than solving it.
+  # Object Lock plus the deny-delete bucket policy is the control here.
+  #checkov:skip=CKV_AWS_18:Object Lock and the deny-delete policy are the control
+  #checkov:skip=CKV_AWS_144:Single region is a documented known gap
+  #checkov:skip=CKV2_AWS_62:Event notifications are not part of this design
   bucket = local.audit_bucket_name
 
   tags = merge(var.tags, { Name = local.audit_bucket_name })
