@@ -35,9 +35,10 @@ data "aws_iam_policy_document" "vpc_cni_assume_role" {
 }
 
 resource "aws_iam_role" "vpc_cni" {
-  name               = "${var.cluster_name}-vpc-cni"
-  description        = "IRSA role for the VPC CNI add-on on ${var.cluster_name}"
-  assume_role_policy = data.aws_iam_policy_document.vpc_cni_assume_role.json
+  name                 = "${var.cluster_name}-vpc-cni"
+  description          = "IRSA role for the VPC CNI add-on on ${var.cluster_name}"
+  assume_role_policy   = data.aws_iam_policy_document.vpc_cni_assume_role.json
+  permissions_boundary = var.permissions_boundary_arn
 
   tags = var.tags
 }
@@ -80,9 +81,10 @@ data "aws_iam_policy_document" "ebs_csi_assume_role" {
 resource "aws_iam_role" "ebs_csi" {
   count = var.enable_ebs_csi_driver ? 1 : 0
 
-  name               = "${var.cluster_name}-ebs-csi"
-  description        = "IRSA role for the EBS CSI driver on ${var.cluster_name}"
-  assume_role_policy = data.aws_iam_policy_document.ebs_csi_assume_role[0].json
+  name                 = "${var.cluster_name}-ebs-csi"
+  description          = "IRSA role for the EBS CSI driver on ${var.cluster_name}"
+  assume_role_policy   = data.aws_iam_policy_document.ebs_csi_assume_role[0].json
+  permissions_boundary = var.permissions_boundary_arn
 
   tags = var.tags
 }
@@ -136,6 +138,7 @@ resource "aws_iam_role_policy" "ebs_csi_kms" {
 }
 
 resource "aws_kms_key" "ebs" {
+  #checkov:skip=CKV2_AWS_64:Access is governed by IAM; default key policy is deliberate
   count = var.enable_ebs_csi_driver ? 1 : 0
 
   description             = "Encrypts EBS volumes provisioned by the ${var.cluster_name} CSI driver"
@@ -283,9 +286,10 @@ data "aws_iam_policy_document" "cloudwatch_observability_assume_role" {
 resource "aws_iam_role" "cloudwatch_observability" {
   count = var.enable_cloudwatch_observability ? 1 : 0
 
-  name               = "${var.cluster_name}-cloudwatch-agent"
-  description        = "IRSA role for the CloudWatch observability add-on on ${var.cluster_name}"
-  assume_role_policy = data.aws_iam_policy_document.cloudwatch_observability_assume_role[0].json
+  name                 = "${var.cluster_name}-cloudwatch-agent"
+  description          = "IRSA role for the CloudWatch observability add-on on ${var.cluster_name}"
+  assume_role_policy   = data.aws_iam_policy_document.cloudwatch_observability_assume_role[0].json
+  permissions_boundary = var.permissions_boundary_arn
 
   tags = var.tags
 }

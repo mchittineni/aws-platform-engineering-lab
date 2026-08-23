@@ -11,6 +11,13 @@ data "aws_caller_identity" "current" {}
 data "aws_region" "current" {}
 
 data "aws_iam_policy_document" "secrets_kms" {
+  # Inside a KMS key policy, Resource "*" means "the key this policy is
+  # attached to" — it cannot be narrowed to an ARN, because the key does not
+  # exist yet when the policy is written. The wildcard checks below read that
+  # as an unconstrained grant, which for a key policy it is not.
+  #checkov:skip=CKV_AWS_109:Resource "*" in a key policy means this key only
+  #checkov:skip=CKV_AWS_111:Resource "*" in a key policy means this key only
+  #checkov:skip=CKV_AWS_356:Resource "*" in a key policy means this key only
   statement {
     sid       = "AllowAccountAdministration"
     effect    = "Allow"

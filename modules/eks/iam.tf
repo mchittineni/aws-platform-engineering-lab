@@ -18,6 +18,7 @@ resource "aws_iam_role" "cluster" {
   name                  = "${var.cluster_name}-cluster"
   description           = "EKS control plane role for ${var.cluster_name}"
   assume_role_policy    = data.aws_iam_policy_document.cluster_assume_role.json
+  permissions_boundary  = var.permissions_boundary_arn
   force_detach_policies = true
 
   tags = var.tags
@@ -56,6 +57,7 @@ resource "aws_iam_role" "node" {
   name                  = "${var.cluster_name}-node"
   description           = "EKS managed node group instance role for ${var.cluster_name}"
   assume_role_policy    = data.aws_iam_policy_document.node_assume_role.json
+  permissions_boundary  = var.permissions_boundary_arn
   force_detach_policies = true
 
   tags = var.tags
