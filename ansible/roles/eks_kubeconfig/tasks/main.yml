@@ -1,0 +1,95 @@
+---
+# =========================================================
+# EKS kubeconfig
+#
+# EKS has no SSH bootstrap step. Everything downstream talks to the managed
+# API endpoint, so the first thing the AWS playbook needs is a kubeconfig with
+# a valid IAM identity behind it.
+# =========================================================
+
+- name: Verify the AWS CLI is available on the control host
+  ansible.builtin.command:
+    cmd: aws --version
+  register: aws_cli_version
+  changed_when: false
+
+
+- name: Verify the caller identity
+  ansible.builtin.command:
+    cmd: aws sts get-caller-identity --output json
+  register: aws_caller_identity
+  changed_when: false
+
+
+- name: Report the identity the playbook will act as
+  ansible.builtin.debug:
+    msg: >-
+      Acting as {{ (aws_caller_identity.stdout | from_json).Arn }}
+      in account {{ (aws_caller_identity.stdout | from_json).Account }}
+
+
+- name: Ensure the kubeconfig directory exists
+  ansible.builtin.file:
+    path: "{{ kubeconfig_path | dirname }}"
+    state: directory
+    mode: "0700"
+
+
+- name: Check for an existing kubeconfig context
+  ansible.builtin.command:
+    cmd: >-
+      kubectl config get-contexts
+      --kubeconfig {{ kubeconfig_path }}
+      --output name
+  register: existing_contexts
+  changed_when: false
+  failed_when: false
+
+
+- name: Determine whether the kubeconfig needs to be written
+  ansible.builtin.set_fact:
+    eks_kubeconfig_required: >-
+      {{
+        eks_kubeconfig_force_refresh
+        or existing_contexts.rc != 0
+        or eks_cluster_name not in (existing_contexts.stdout | default(''))
+      }}
+
+
+- name: Write the kubeconfig entry for the cluster
+  ansible.builtin.command:
+    cmd: >-
+      aws eks update-kubeconfig
+      --region {{ aws_region }}
+      --name {{ eks_cluster_name }}
+      --kubeconfig {{ kubeconfig_path }}
+      --alias {{ eks_cluster_name }}
+  when: eks_kubeconfig_required
+  changed_when: true
+
+
+- name: Restrict kubeconfig permissions
+  ansible.builtin.file:
+    path: "{{ kubeconfig_path }}"
+    mode: "0600"
+  when: not ansible_check_mode
+
+
+- name: Confirm the API server answers
+  kubernetes.core.k8s_info:
+    api_version: v1
+    kind: Node
+    kubeconfig: "{{ kubeconfig_path }}"
+  register: eks_nodes
+  retries: 30
+  delay: 10
+  until: eks_nodes.resources | default([]) | length > 0
+  when: not ansible_check_mode
+
+
+- name: Report the nodes that joined the cluster
+  ansible.builtin.debug:
+    msg: >-
+      {{ eks_nodes.resources | length }} node(s) registered:
+      {{ eks_nodes.resources | map(attribute='metadata.name') | join(', ') }}
+  when: not ansible_check_mode

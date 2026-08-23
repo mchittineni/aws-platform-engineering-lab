@@ -1,0 +1,224 @@
+---
+# =========================================================
+# Post-bootstrap validation
+#
+# Each check answers a question somebody would otherwise ask during an
+# incident: are the nodes there, are they spread across zones, is there a
+# default StorageClass, are the controllers running, is Argo CD converged, is
+# NetworkPolicy actually enforced.
+#
+# Read only. Nothing here changes the cluster, so it is safe to run on a
+# schedule against a live environment.
+#
+# Deliberately no json_query: that filter needs the jmespath library, and a
+# validation step that fails because of a missing Python package on the
+# control host teaches people to skip validation.
+# =========================================================
+
+- name: Collect the nodes
+  kubernetes.core.k8s_info:
+    api_version: v1
+    kind: Node
+    kubeconfig: "{{ kubeconfig_path }}"
+  register: validate_nodes
+
+
+- name: Build the list of Ready nodes
+  ansible.builtin.set_fact:
+    ready_node_names: "{{ ready_node_names | default([]) + [item.metadata.name] }}"
+  loop: "{{ validate_nodes.resources | default([]) }}"
+  loop_control:
+    label: "{{ item.metadata.name }}"
+  when: >-
+    item.status.conditions | default([])
+    | selectattr('type', 'equalto', 'Ready')
+    | selectattr('status', 'equalto', 'True')
+    | list | length > 0
+
+
+- name: Build the list of zones the nodes are in
+  ansible.builtin.set_fact:
+    node_zones: "{{ (node_zones | default([]) + [item.metadata.labels['topology.kubernetes.io/zone']]) | unique }}"
+  loop: "{{ validate_nodes.resources | default([]) }}"
+  loop_control:
+    label: "{{ item.metadata.name }}"
+  when: item.metadata.labels['topology.kubernetes.io/zone'] is defined
+
+
+- name: Verify enough nodes are Ready
+  ansible.builtin.assert:
+    that:
+      - (ready_node_names | default([])) | length >= eks_validate_min_ready_nodes
+    fail_msg: >-
+      Only {{ (ready_node_names | default([])) | length }} node(s) Ready,
+      expected at least {{ eks_validate_min_ready_nodes }}. Check the managed
+      node groups: aws eks describe-nodegroup --cluster-name
+      {{ eks_cluster_name }} --nodegroup-name platform
+    success_msg: >-
+      {{ (ready_node_names | default([])) | length }} node(s) Ready:
+      {{ (ready_node_names | default([])) | join(', ') }}
+
+
+- name: Verify the nodes are spread across availability zones
+  ansible.builtin.assert:
+    that:
+      - (node_zones | default([])) | length >= 2
+    fail_msg: >-
+      Every node is in {{ (node_zones | default([])) | join(', ') }}. A single
+      zone cluster is not highly available regardless of how many nodes it has.
+    success_msg: >-
+      Nodes span {{ (node_zones | default([])) | length }} zone(s):
+      {{ (node_zones | default([])) | join(', ') }}
+
+
+- name: Collect the StorageClasses
+  kubernetes.core.k8s_info:
+    api_version: storage.k8s.io/v1
+    kind: StorageClass
+    kubeconfig: "{{ kubeconfig_path }}"
+  register: validate_storage_classes
+
+
+- name: Build the list of default StorageClasses
+  ansible.builtin.set_fact:
+    default_storage_classes: "{{ default_storage_classes | default([]) + [item.metadata.name] }}"
+  loop: "{{ validate_storage_classes.resources | default([]) }}"
+  loop_control:
+    label: "{{ item.metadata.name }}"
+  when: >-
+    (item.metadata.annotations | default({}))['storageclass.kubernetes.io/is-default-class']
+    | default('false') == 'true'
+
+
+- name: Verify there is exactly one default StorageClass
+  ansible.builtin.assert:
+    that:
+      - (default_storage_classes | default([])) | length == 1
+    fail_msg: >-
+      Expected exactly one default StorageClass, found
+      {{ (default_storage_classes | default([])) | length }}:
+      {{ (default_storage_classes | default([])) | join(', ') }}. Two defaults
+      make PVC binding non-deterministic; none means every PVC without an
+      explicit class stays Pending forever.
+    success_msg: "Default StorageClass: {{ (default_storage_classes | default([])) | join(', ') }}"
+
+
+- name: Collect the required platform deployments
+  kubernetes.core.k8s_info:
+    api_version: apps/v1
+    kind: Deployment
+    namespace: "{{ item.split('/')[0] }}"
+    name: "{{ item.split('/')[1] }}"
+    kubeconfig: "{{ kubeconfig_path }}"
+  register: validate_deployments
+  loop: "{{ eks_validate_required_deployments }}"
+  loop_control:
+    label: "{{ item }}"
+
+
+- name: Assert every required deployment has a ready replica
+  ansible.builtin.assert:
+    that:
+      - item.resources | default([]) | length > 0
+      - (item.resources[0].status.readyReplicas | default(0)) > 0
+    fail_msg: >-
+      {{ item.item }} has no ready replica. Inspect it with:
+      kubectl -n {{ item.item.split('/')[0] }} describe deployment
+      {{ item.item.split('/')[1] }}
+    success_msg: "{{ item.item }} is available"
+  loop: "{{ validate_deployments.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+
+
+- name: Collect the Argo CD Applications
+  kubernetes.core.k8s_info:
+    api_version: argoproj.io/v1alpha1
+    kind: Application
+    namespace: "{{ argocd_namespace | default('argocd') }}"
+    kubeconfig: "{{ kubeconfig_path }}"
+  register: validate_applications
+
+
+- name: Build the list of Applications that have not converged
+  ansible.builtin.set_fact:
+    degraded_applications: >-
+      {{
+        degraded_applications | default([])
+        + [item.metadata.name + ' (' + (item.status.sync.status | default('Unknown'))
+           + '/' + (item.status.health.status | default('Unknown')) + ')']
+      }}
+  loop: "{{ validate_applications.resources | default([]) }}"
+  loop_control:
+    label: "{{ item.metadata.name }}"
+  when: >-
+    (item.status.sync.status | default('') != 'Synced')
+    or (item.status.health.status | default('') != 'Healthy')
+
+
+- name: Assert every Argo CD Application is Synced and Healthy
+  ansible.builtin.assert:
+    that:
+      - (degraded_applications | default([])) | length == 0
+    fail_msg: >-
+      Applications not Synced and Healthy:
+      {{ (degraded_applications | default([])) | join(', ') }}. Inspect with:
+      kubectl -n {{ argocd_namespace | default('argocd') }} describe
+      application <name>
+    success_msg: >-
+      {{ validate_applications.resources | default([]) | length }}
+      Application(s) Synced and Healthy
+
+
+- name: Read the aws-node DaemonSet
+  kubernetes.core.k8s_info:
+    api_version: apps/v1
+    kind: DaemonSet
+    namespace: kube-system
+    name: aws-node
+    kubeconfig: "{{ kubeconfig_path }}"
+  register: validate_aws_node
+
+
+# A cluster with no NetworkPolicy objects is a legitimate configuration. A
+# cluster with NetworkPolicy objects and no enforcement is not, and this is the
+# only way to tell the two apart from outside.
+- name: Collect the NetworkPolicies
+  kubernetes.core.k8s_info:
+    api_version: networking.k8s.io/v1
+    kind: NetworkPolicy
+    kubeconfig: "{{ kubeconfig_path }}"
+  register: validate_network_policies
+
+
+- name: Verify NetworkPolicy is enforced when policies exist
+  ansible.builtin.assert:
+    that:
+      - >-
+        'aws-eks-nodeagent' in (
+          validate_aws_node.resources[0].spec.template.spec.containers
+          | map(attribute='name') | list
+        )
+    fail_msg: >-
+      {{ validate_network_policies.resources | length }} NetworkPolicy
+      object(s) exist, but the aws-node DaemonSet has no network policy agent
+      container, so none of them are enforced. Set enable_network_policy on
+      the eks module and re-apply.
+    success_msg: >-
+      NetworkPolicy enforcement is active for
+      {{ validate_network_policies.resources | length }} policy object(s)
+  when:
+    - validate_network_policies.resources | default([]) | length > 0
+    - validate_aws_node.resources | default([]) | length > 0
+
+
+- name: Report the validation summary
+  ansible.builtin.debug:
+    msg:
+      - "Cluster:         {{ eks_cluster_name }}"
+      - "Nodes Ready:     {{ (ready_node_names | default([])) | length }}"
+      - "Zones:           {{ (node_zones | default([])) | join(', ') }}"
+      - "Default class:   {{ (default_storage_classes | default([])) | join(', ') }}"
+      - "Applications:    {{ validate_applications.resources | default([]) | length }} Synced and Healthy"
+      - "NetworkPolicies: {{ validate_network_policies.resources | default([]) | length }}"
+      - "Validation passed."

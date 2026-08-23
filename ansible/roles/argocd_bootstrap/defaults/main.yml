@@ -1,0 +1,23 @@
+---
+# Path to the kubeconfig used to talk to the cluster. Written by the
+# eks_kubeconfig role and overridden per environment in group_vars.
+kubeconfig_path: "{{ lookup('ansible.builtin.env', 'HOME') }}/.kube/config"
+
+argocd_namespace: argocd
+
+# Argo CD project every Application is created in. `default` allows any
+# source and destination; a real deployment should create a restricted project.
+argocd_project: default
+
+# Applications defined per environment in group_vars.
+gitops_applications: []
+
+# Prune removes resources deleted from Git. Self-heal reverts a manual kubectl
+# edit. Together they are what makes Git the source of truth rather than a
+# suggestion.
+gitops_automated_prune: true
+gitops_automated_self_heal: true
+
+# How long to wait for each Application to reach Synced and Healthy.
+gitops_sync_retries: 60
+gitops_sync_delay: 10

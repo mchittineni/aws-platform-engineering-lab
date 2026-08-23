@@ -1,0 +1,111 @@
+---
+# =========================================================
+# AWS staging environment
+#
+# Mirrors production so that a controller upgrade, an alert rule or a resource
+# limit that breaks production breaks here first.
+#
+#   terraform -chdir=environments/staging output -json
+# =========================================================
+
+aws_region: "eu-central-1"
+
+eks_cluster_name: "aws-platform-staging"
+
+eks_vpc_id: "{{ lookup('ansible.builtin.env', 'EKS_VPC_ID') }}"
+
+kubeconfig_path: "{{ lookup('ansible.builtin.env', 'HOME') }}/.kube/aws-platform-staging.config"
+
+
+# =========================================================
+# IRSA role ARNs
+# =========================================================
+
+aws_load_balancer_controller_role_arn: "{{ lookup('ansible.builtin.env', 'ALB_CONTROLLER_ROLE_ARN') }}"
+cluster_autoscaler_role_arn: "{{ lookup('ansible.builtin.env', 'CLUSTER_AUTOSCALER_ROLE_ARN') }}"
+external_secrets_role_arn: "{{ lookup('ansible.builtin.env', 'EXTERNAL_SECRETS_ROLE_ARN') }}"
+external_dns_role_arn: "{{ lookup('ansible.builtin.env', 'EXTERNAL_DNS_ROLE_ARN') }}"
+cert_manager_role_arn: "{{ lookup('ansible.builtin.env', 'CERT_MANAGER_ROLE_ARN') }}"
+
+
+# =========================================================
+# Platform controllers
+#
+# The full production set, so the same code path is exercised.
+# =========================================================
+
+external_secrets_enabled: true
+
+external_dns_enabled: true
+external_dns_domain_filters:
+  - "staging.example.com"
+# upsert-only in staging as well: staging and production sharing a hosted zone
+# and both running sync is how a production record gets deleted.
+external_dns_policy: "upsert-only"
+
+cert_manager_enabled: true
+cert_manager_acme_email: "{{ lookup('ansible.builtin.env', 'ACME_EMAIL') }}"
+cert_manager_route53_hosted_zone_id: "{{ lookup('ansible.builtin.env', 'ROUTE53_HOSTED_ZONE_ID') }}"
+# Staging uses the ACME staging endpoint. The production endpoint has a rate
+# limit that a re-run of this playbook can exhaust.
+cert_manager_acme_server: "https://acme-staging-v02.api.letsencrypt.org/directory"
+
+
+# =========================================================
+# Storage
+# =========================================================
+
+eks_storage_kms_key_arn: "{{ lookup('ansible.builtin.env', 'EBS_KMS_KEY_ARN') }}"
+eks_storage_class_name: "gp3"
+eks_storage_reclaim_policy: "Delete"
+
+
+# =========================================================
+# Argo CD
+# =========================================================
+
+argocd_chart_version: "10.4.0"
+argocd_high_availability: true
+
+
+# =========================================================
+# Validation
+# =========================================================
+
+eks_validate_min_ready_nodes: 2
+
+
+# =========================================================
+# GitOps
+# =========================================================
+
+gitops_repo_url: "{{ lookup('ansible.builtin.env', 'GITOPS_REPO_URL') }}"
+gitops_target_revision: "main"
+
+kube_prometheus_stack_chart_version: "88.5.0"
+
+gitops_applications:
+  - name: platform
+    type: git
+    path: "kubernetes/platform"
+    namespace: platform
+
+  - name: storage
+    type: git
+    path: "kubernetes/storage"
+    namespace: kube-system
+
+  - name: demo-nginx
+    type: git
+    path: "kubernetes/apps/nginx"
+    namespace: demo
+
+  - name: monitoring
+    type: helm
+    chart: kube-prometheus-stack
+    chart_version: "88.5.0"
+    helm_repo_url: "https://prometheus-community.github.io/helm-charts"
+    values_paths:
+      - "kubernetes/monitoring/kube-prometheus-stack/values.yaml"
+      - "kubernetes/monitoring/kube-prometheus-stack/values-staging.yaml"
+    namespace: monitoring

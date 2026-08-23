@@ -1,0 +1,362 @@
+---
+# =========================================================
+# EKS platform controllers
+#
+# Terraform created the IAM roles; this role binds them to service accounts
+# and installs the controllers that make the cluster usable.
+#
+# Everything here is a Helm release with a pinned chart version. Nothing is
+# installed at "latest", so a re-run does not quietly upgrade a controller.
+# =========================================================
+
+# Chicken and egg: every controller below asks for platform-critical, and the
+# API server rejects a pod whose priority class does not exist. Argo CD is what
+# normally owns these objects, but Argo CD is installed after this role, so they
+# are applied here from the same file Argo CD reconciles. Identical content, so
+# Argo CD adopts them and reports Synced rather than fighting over them.
+- name: Ensure the platform priority classes exist
+  kubernetes.core.k8s:
+    state: present
+    kubeconfig: "{{ kubeconfig_path }}"
+    src: "{{ playbook_dir }}/../../kubernetes/platform/priority-classes.yaml"
+    apply: true
+
+
+- name: Add Helm repositories for the platform controllers
+  kubernetes.core.helm_repository:
+    name: "{{ item.name }}"
+    repo_url: "{{ item.url }}"
+  loop:
+    - name: eks
+      url: https://aws.github.io/eks-charts
+    - name: metrics-server
+      url: https://kubernetes-sigs.github.io/metrics-server/
+    - name: autoscaler
+      url: https://kubernetes.github.io/autoscaler
+    - name: external-secrets
+      url: https://charts.external-secrets.io
+    - name: external-dns
+      url: https://kubernetes-sigs.github.io/external-dns/
+    - name: jetstack
+      url: https://charts.jetstack.io
+  loop_control:
+    label: "{{ item.name }}"
+
+
+# Every controller below needs its IRSA role. Failing here, before any Helm
+# release is created, beats discovering it from a CrashLoopBackOff.
+- name: Verify every enabled controller has an IRSA role
+  ansible.builtin.assert:
+    that:
+      - item.arn | length > 0
+    fail_msg: >-
+      {{ item.name }} is enabled but its IRSA role ARN is empty. Take it from
+      the platform_controller_role_arns Terraform output:
+      terraform -chdir=environments/<env> output -json platform_controller_role_arns
+  loop:
+    - name: aws-load-balancer-controller
+      enabled: "{{ aws_load_balancer_controller_enabled }}"
+      arn: "{{ aws_load_balancer_controller_role_arn }}"
+    - name: cluster-autoscaler
+      enabled: "{{ cluster_autoscaler_enabled }}"
+      arn: "{{ cluster_autoscaler_role_arn }}"
+    - name: external-secrets
+      enabled: "{{ external_secrets_enabled }}"
+      arn: "{{ external_secrets_role_arn }}"
+    - name: external-dns
+      enabled: "{{ external_dns_enabled }}"
+      arn: "{{ external_dns_role_arn }}"
+    - name: cert-manager
+      enabled: "{{ cert_manager_enabled }}"
+      arn: "{{ cert_manager_role_arn }}"
+  loop_control:
+    label: "{{ item.name }}"
+  when: item.enabled | bool
+
+
+# ---------------------------------------------------------
+# AWS Load Balancer Controller
+# ---------------------------------------------------------
+
+- name: Install the AWS Load Balancer Controller
+  kubernetes.core.helm:
+    name: aws-load-balancer-controller
+    chart_ref: eks/aws-load-balancer-controller
+    chart_version: "{{ aws_load_balancer_controller_chart_version }}"
+    release_namespace: kube-system
+    kubeconfig: "{{ kubeconfig_path }}"
+    state: present
+    wait: true
+    values:
+      clusterName: "{{ eks_cluster_name }}"
+      region: "{{ aws_region }}"
+      vpcId: "{{ eks_vpc_id }}"
+      replicaCount: "{{ aws_load_balancer_controller_replicas }}"
+      priorityClassName: "{{ platform_priority_class }}"
+      serviceAccount:
+        create: true
+        name: aws-load-balancer-controller
+        annotations:
+          eks.amazonaws.com/role-arn: "{{ aws_load_balancer_controller_role_arn }}"
+      # Spread the replicas so a single node draining does not take Ingress
+      # reconciliation down with it.
+      podDisruptionBudget:
+        maxUnavailable: 1
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: aws-load-balancer-controller
+      enableServiceMutatorWebhook: false
+      resources:
+        requests:
+          cpu: 100m
+          memory: 128Mi
+        limits:
+          memory: 256Mi
+  when: aws_load_balancer_controller_enabled
+
+
+- name: Wait for the AWS Load Balancer Controller
+  kubernetes.core.k8s_info:
+    api_version: apps/v1
+    kind: Deployment
+    namespace: kube-system
+    name: aws-load-balancer-controller
+    kubeconfig: "{{ kubeconfig_path }}"
+  register: alb_controller
+  retries: 30
+  delay: 10
+  until:
+    - alb_controller.resources | default([]) | length > 0
+    - (alb_controller.resources[0].status.readyReplicas | default(0)) > 0
+  when:
+    - aws_load_balancer_controller_enabled
+    - not ansible_check_mode
+
+
+# ---------------------------------------------------------
+# metrics-server
+# ---------------------------------------------------------
+
+- name: Install metrics-server
+  kubernetes.core.helm:
+    name: metrics-server
+    chart_ref: metrics-server/metrics-server
+    chart_version: "{{ metrics_server_chart_version }}"
+    release_namespace: kube-system
+    kubeconfig: "{{ kubeconfig_path }}"
+    state: present
+    wait: true
+    values:
+      priorityClassName: "{{ platform_priority_class }}"
+      args:
+        - --kubelet-insecure-tls=false
+        - --kubelet-preferred-address-types=InternalIP
+      resources:
+        requests:
+          cpu: 100m
+          memory: 200Mi
+  when: metrics_server_enabled
+
+
+# ---------------------------------------------------------
+# Cluster autoscaler
+# ---------------------------------------------------------
+
+- name: Install the cluster autoscaler
+  kubernetes.core.helm:
+    name: cluster-autoscaler
+    chart_ref: autoscaler/cluster-autoscaler
+    chart_version: "{{ cluster_autoscaler_chart_version }}"
+    release_namespace: kube-system
+    kubeconfig: "{{ kubeconfig_path }}"
+    state: present
+    wait: true
+    values:
+      autoDiscovery:
+        clusterName: "{{ eks_cluster_name }}"
+      awsRegion: "{{ aws_region }}"
+      priorityClassName: "{{ platform_priority_class }}"
+      rbac:
+        serviceAccount:
+          create: true
+          name: cluster-autoscaler
+          annotations:
+            eks.amazonaws.com/role-arn: "{{ cluster_autoscaler_role_arn }}"
+      extraArgs:
+        # Without this the autoscaler refuses to remove a node running any pod
+        # that is not backed by a controller, which in practice means it never
+        # scales down.
+        skip-nodes-with-system-pods: false
+        skip-nodes-with-local-storage: false
+        balance-similar-node-groups: true
+        expander: least-waste
+  when: cluster_autoscaler_enabled
+
+
+# ---------------------------------------------------------
+# External Secrets Operator
+# ---------------------------------------------------------
+
+- name: Install External Secrets Operator
+  kubernetes.core.helm:
+    name: external-secrets
+    chart_ref: external-secrets/external-secrets
+    chart_version: "{{ external_secrets_chart_version }}"
+    release_namespace: external-secrets
+    create_namespace: true
+    kubeconfig: "{{ kubeconfig_path }}"
+    state: present
+    wait: true
+    values:
+      installCRDs: true
+      replicaCount: 2
+      priorityClassName: "{{ platform_priority_class }}"
+      serviceAccount:
+        create: true
+        name: external-secrets
+        annotations:
+          eks.amazonaws.com/role-arn: "{{ external_secrets_role_arn }}"
+      webhook:
+        replicaCount: 2
+      certController:
+        replicaCount: 1
+  when: external_secrets_enabled
+
+
+# A ClusterSecretStore rather than a per namespace SecretStore: the IRSA role
+# is cluster wide anyway, and duplicating the store in every namespace is how
+# one of them ends up pointing at the wrong region.
+- name: Create the Secrets Manager ClusterSecretStore
+  kubernetes.core.k8s:
+    state: present
+    kubeconfig: "{{ kubeconfig_path }}"
+    definition:
+      apiVersion: external-secrets.io/v1
+      kind: ClusterSecretStore
+      metadata:
+        name: "{{ external_secrets_store_name }}"
+      spec:
+        provider:
+          aws:
+            service: SecretsManager
+            region: "{{ aws_region }}"
+            auth:
+              jwt:
+                serviceAccountRef:
+                  name: external-secrets
+                  namespace: external-secrets
+  when:
+    - external_secrets_enabled
+    - external_secrets_create_cluster_store
+    - not ansible_check_mode
+
+
+# ---------------------------------------------------------
+# external-dns
+# ---------------------------------------------------------
+
+- name: Fail when external-dns has no domain filter
+  ansible.builtin.fail:
+    msg: >-
+      external_dns_domain_filters is empty. Without a filter external-dns
+      manages every record in every zone it can see, which is how one cluster
+      deletes another cluster's DNS.
+  when:
+    - external_dns_enabled
+    - external_dns_domain_filters | length == 0
+
+
+- name: Install external-dns
+  kubernetes.core.helm:
+    name: external-dns
+    chart_ref: external-dns/external-dns
+    chart_version: "{{ external_dns_chart_version }}"
+    release_namespace: kube-system
+    kubeconfig: "{{ kubeconfig_path }}"
+    state: present
+    wait: true
+    values:
+      provider:
+        name: aws
+      priorityClassName: "{{ platform_priority_class }}"
+      serviceAccount:
+        create: true
+        name: external-dns
+        annotations:
+          eks.amazonaws.com/role-arn: "{{ external_dns_role_arn }}"
+      domainFilters: "{{ external_dns_domain_filters }}"
+      # sync would let external-dns delete records it did not create.
+      # upsert-only is the safe default for a shared hosted zone.
+      policy: "{{ external_dns_policy }}"
+      txtOwnerId: "{{ eks_cluster_name }}"
+      sources:
+        - ingress
+        - service
+  when: external_dns_enabled
+
+
+# ---------------------------------------------------------
+# cert-manager
+# ---------------------------------------------------------
+
+- name: Install cert-manager
+  kubernetes.core.helm:
+    name: cert-manager
+    chart_ref: jetstack/cert-manager
+    chart_version: "{{ cert_manager_chart_version }}"
+    release_namespace: "{{ cert_manager_namespace }}"
+    create_namespace: true
+    kubeconfig: "{{ kubeconfig_path }}"
+    state: present
+    wait: true
+    values:
+      crds:
+        enabled: true
+      replicaCount: 2
+      global:
+        priorityClassName: "{{ platform_priority_class }}"
+      serviceAccount:
+        create: true
+        name: cert-manager
+        annotations:
+          eks.amazonaws.com/role-arn: "{{ cert_manager_role_arn }}"
+      # The IRSA token is projected with a shorter audience list than the
+      # default, so cert-manager needs to be told to use it.
+      securityContext:
+        fsGroup: 1001
+      webhook:
+        replicaCount: 2
+  when: cert_manager_enabled
+
+
+- name: Create the Let's Encrypt ClusterIssuer
+  kubernetes.core.k8s:
+    state: present
+    kubeconfig: "{{ kubeconfig_path }}"
+    definition:
+      apiVersion: cert-manager.io/v1
+      kind: ClusterIssuer
+      metadata:
+        name: letsencrypt
+      spec:
+        acme:
+          server: "{{ cert_manager_acme_server }}"
+          email: "{{ cert_manager_acme_email }}"
+          privateKeySecretRef:
+            name: letsencrypt-account-key
+          solvers:
+            # DNS-01, not HTTP-01: an internal ALB is not reachable from the
+            # ACME server, so an HTTP challenge can never complete.
+            - dns01:
+                route53:
+                  region: "{{ aws_region }}"
+                  hostedZoneID: "{{ cert_manager_route53_hosted_zone_id }}"
+  when:
+    - cert_manager_enabled
+    - cert_manager_acme_email | length > 0
+    - cert_manager_route53_hosted_zone_id | length > 0
+    - not ansible_check_mode

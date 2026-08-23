@@ -1,0 +1,68 @@
+---
+name: Kubernetes Validate
+
+on:
+  pull_request:
+    paths:
+      - "kubernetes/**"
+      - ".github/workflows/kubernetes-lint.yml"
+
+jobs:
+
+  kubeconform:
+
+    runs-on: ubuntu-latest
+
+    steps:
+
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+
+      - name: Install kubeconform
+        run: |
+          curl -sSL \
+            https://github.com/yannh/kubeconform/releases/latest/download/kubeconform-linux-amd64.tar.gz \
+            | tar xz
+
+      # Helm values files are not Kubernetes manifests, so they are excluded.
+      # -ignore-missing-schemas lets CRD-backed resources through; only the
+      # built-in API types are strictly validated.
+      - name: Validate manifests
+        run: |
+          find kubernetes -type f \
+            \( -name '*.yaml' -o -name '*.yml' \) \
+            -not -name 'values*.yaml' \
+            -print0 \
+          | xargs -0 ./kubeconform \
+              -summary \
+              -strict \
+              -ignore-missing-schemas \
+              -kubernetes-version 1.34.0
+
+  policy:
+
+    runs-on: ubuntu-latest
+
+    steps:
+
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+
+      # kubeconform proves a manifest is valid API. It says nothing about
+      # whether the pod runs as root. Checkov's Kubernetes policies do.
+      #
+      # An allow list rather than a skip list, deliberately: these are the
+      # container isolation controls this repository claims to enforce, and a
+      # regression in any of them should fail the pull request. Adding a new
+      # control here is a decision; inheriting Checkov's full default set is
+      # how a scan ends up permanently soft-failing.
+      - name: Checkov container isolation policies
+        uses: bridgecrewio/checkov-action@99bb2caf247dfd9f03cf984373bc6043d4e32ebf  # v12.1347.0
+        with:
+          directory: kubernetes
+          framework: kubernetes
+          quiet: true
+          soft_fail: false
+          check: >-
+            CKV_K8S_16,CKV_K8S_17,CKV_K8S_20,CKV_K8S_22,
+            CKV_K8S_23,CKV_K8S_25,CKV_K8S_28,CKV_K8S_37

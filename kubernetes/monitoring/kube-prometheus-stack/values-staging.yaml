@@ -1,0 +1,39 @@
+---
+# =========================================================
+# staging overlay
+#
+# Production shaped, so an alert rule or a resource limit that breaks
+# production breaks here first.
+# =========================================================
+prometheus:
+  prometheusSpec:
+    replicas: 2
+    retention: 15d
+    retentionSize: 40GB
+
+    storageSpec:
+      volumeClaimTemplate:
+        spec:
+          # gp3-backup so the restore procedure is rehearsed on real data.
+          storageClassName: gp3-backup
+          resources:
+            requests:
+              storage: 50Gi
+
+    externalLabels:
+      cluster: aws-platform-staging
+      environment: staging
+
+alertmanager:
+  alertmanagerSpec:
+    replicas: 2
+
+grafana:
+  ingress:
+    enabled: true
+    ingressClassName: alb
+    annotations:
+      alb.ingress.kubernetes.io/scheme: internal
+      alb.ingress.kubernetes.io/target-type: ip
+      alb.ingress.kubernetes.io/group.name: aws-platform-staging
+      alb.ingress.kubernetes.io/group.order: "20"

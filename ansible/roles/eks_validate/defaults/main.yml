@@ -1,0 +1,12 @@
+---
+kubeconfig_path: "{{ lookup('ansible.builtin.env', 'HOME') }}/.kube/config"
+
+# Minimum number of Ready nodes before the platform is considered up.
+eks_validate_min_ready_nodes: 2
+
+# Deployments that must have at least one ready replica, as namespace/name.
+eks_validate_required_deployments:
+  - kube-system/coredns
+  - kube-system/aws-load-balancer-controller
+  - kube-system/metrics-server
+  - kube-system/ebs-csi-controller

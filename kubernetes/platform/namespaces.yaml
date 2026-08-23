@@ -1,0 +1,31 @@
+---
+# =========================================================
+# Platform namespaces
+#
+# Every namespace carries a Pod Security Admission label. A namespace without
+# one silently runs at `privileged`, which is the difference between a policy
+# and a hope.
+# =========================================================
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: platform
+  labels:
+    app.kubernetes.io/managed-by: argocd
+    platform.aws/tier: platform
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/warn: restricted
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: monitoring
+  labels:
+    app.kubernetes.io/managed-by: argocd
+    platform.aws/tier: platform
+    # node-exporter needs the host network and host paths, which `restricted`
+    # forbids. `baseline` still blocks privileged containers and host PID.
+    pod-security.kubernetes.io/enforce: baseline
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/warn: restricted

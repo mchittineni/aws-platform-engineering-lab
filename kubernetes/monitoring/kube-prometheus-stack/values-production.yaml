@@ -1,0 +1,54 @@
+---
+# =========================================================
+# production overlay
+# =========================================================
+prometheus:
+  prometheusSpec:
+    replicas: 2
+    retention: 30d
+    retentionSize: 90GB
+
+    storageSpec:
+      volumeClaimTemplate:
+        spec:
+          storageClassName: gp3-backup
+          resources:
+            requests:
+              storage: 100Gi
+
+    resources:
+      requests:
+        cpu: "1"
+        memory: 4Gi
+      limits:
+        memory: 8Gi
+
+    externalLabels:
+      cluster: aws-platform-prod
+      environment: production
+
+alertmanager:
+  alertmanagerSpec:
+    replicas: 3
+
+    storage:
+      volumeClaimTemplate:
+        spec:
+          storageClassName: gp3-backup
+          resources:
+            requests:
+              storage: 20Gi
+
+grafana:
+  persistence:
+    storageClassName: gp3-backup
+    size: 20Gi
+
+  ingress:
+    enabled: true
+    ingressClassName: alb
+    annotations:
+      alb.ingress.kubernetes.io/scheme: internal
+      alb.ingress.kubernetes.io/target-type: ip
+      alb.ingress.kubernetes.io/group.name: aws-platform-prod
+      alb.ingress.kubernetes.io/group.order: "20"

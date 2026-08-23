@@ -1,0 +1,15 @@
+---
+# Pinned rather than floating. An unpinned collection means the next
+# ansible-galaxy install can change how the platform is deployed without
+# anybody choosing to.
+collections:
+  # k8s, k8s_info, helm, helm_repository
+  - name: kubernetes.core
+    version: ">=6.0.0,<7.0.0"
+
+  - name: community.general
+    version: ">=11.0.0,<12.0.0"
+
+  # AWS modules and the aws_ec2 dynamic inventory plugin.
+  - name: amazon.aws
+    version: ">=10.0.0,<11.0.0"

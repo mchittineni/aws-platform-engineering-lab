@@ -1,0 +1,47 @@
+region = "eu-central-1"
+
+# Must be globally unique across all of S3.
+state_bucket_name = "CHANGE_ME-aws-platform-engineering-lab-tfstate"
+
+github_repository = "CHANGE_ME/aws-platform-engineering-lab"
+
+# Only one GitHub OIDC provider may exist per AWS account. Set this to false
+# and supply existing_github_oidc_provider_arn if the account already has one.
+create_github_oidc_provider = true
+
+owner = "platform-engineering"
+
+
+##############################################################################
+# Security baseline
+##############################################################################
+
+audit_log_retention_days = 730
+
+# Object Lock cannot be added later. Set this now, or accept that turning it
+# on means creating a second audit bucket.
+audit_object_lock_days = 0
+
+enable_config       = true
+enable_security_hub = true
+
+# Inspector is charged per instance and per image scanned. Turn it on once the
+# node groups and registries are stable.
+enable_inspector = false
+
+security_notification_emails = ["platform-security@example.com"]
+
+
+##############################################################################
+# Cost controls
+##############################################################################
+
+monthly_budget_usd = 500
+
+environment_budgets_usd = {
+  dev        = 250
+  staging    = 350
+  production = 1200
+}
+
+cost_notification_emails = ["platform-finops@example.com"]

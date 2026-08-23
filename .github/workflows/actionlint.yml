@@ -1,0 +1,23 @@
+---
+name: Workflow Lint
+
+# The workflows here hold the AWS deployment credentials. A typo in an `if:`
+# expression is a security problem, not a style problem.
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/**"
+
+jobs:
+  actionlint:
+
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+
+      - name: actionlint
+        uses: raven-actions/actionlint@3a24062651993d40fed1019b58ac6fbdfbf276cc  # v2.0.1
+        with:
+          fail-on-error: true

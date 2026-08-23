@@ -1,0 +1,8 @@
+---
+# Where the generated kubeconfig is written. Kept outside the repository so it
+# can never be committed.
+kubeconfig_path: "{{ lookup('ansible.builtin.env', 'HOME') }}/.kube/{{ eks_cluster_name }}.config"
+
+# Refresh the kubeconfig even when the context already exists. Cheap, and it
+# picks up a rotated endpoint or CA after a cluster rebuild.
+eks_kubeconfig_force_refresh: false

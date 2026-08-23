@@ -1,0 +1,159 @@
+---
+name: Drift Detection
+
+# Terraform state describes what should exist. This asks AWS what does exist.
+# The gap between them is drift: a console change made during an incident, a
+# resource deleted by hand, a default AWS changed under you.
+#
+# Read only. The plan role has ReadOnlyAccess, so this workflow cannot fix
+# what it finds — it opens an issue and a human decides.
+on:
+  schedule:
+    - cron: "0 7 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+  issues: write
+
+concurrency:
+  group: drift-detection
+  cancel-in-progress: true
+
+jobs:
+  detect:
+
+    if: vars.AWS_REGION != ''
+
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - environment: dev
+            directory: environments/dev
+            role_var: AWS_DEV_PLAN_ROLE_ARN
+          - environment: staging
+            directory: environments/staging
+            role_var: AWS_STAGING_PLAN_ROLE_ARN
+          - environment: production
+            directory: environments/production
+            role_var: AWS_PRODUCTION_PLAN_ROLE_ARN
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@e3dd6a429d7300a6a4c196c26e071d42e0343502  # v4.0.2
+        with:
+          role-to-assume: ${{ vars[matrix.role_var] }}
+          aws-region: ${{ vars.AWS_REGION }}
+          role-session-name: gha-drift-${{ matrix.environment }}-${{ github.run_id }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e  # v4.0.1
+        with:
+          terraform_version_file: .terraform-version
+
+      - name: Terraform Init
+        working-directory: ${{ matrix.directory }}
+        run: |
+          terraform init -input=false \
+            -backend-config="bucket=${{ vars.AWS_TF_STATE_BUCKET }}" \
+            -backend-config="region=${{ vars.AWS_REGION }}"
+
+      # -detailed-exitcode: 0 no changes, 1 error, 2 drift.
+      - name: Terraform Plan
+        id: plan
+        working-directory: ${{ matrix.directory }}
+        run: |
+          set -o pipefail
+          terraform plan -input=false -lock=false -no-color \
+            -detailed-exitcode | tee plan.txt
+        continue-on-error: true
+
+      - name: Classify the result
+        id: classify
+        working-directory: ${{ matrix.directory }}
+        run: |
+          # outcome is success only on exit 0. Exit 2 means drift and exit 1
+          # means the plan itself failed, and the two need different handling.
+          if [ "${{ steps.plan.outcome }}" = "success" ]; then
+            echo "state=clean" >> "$GITHUB_OUTPUT"
+          elif grep -q "No changes." plan.txt; then
+            echo "state=clean" >> "$GITHUB_OUTPUT"
+          elif grep -qE "^(Plan:|Terraform will perform)" plan.txt; then
+            echo "state=drift" >> "$GITHUB_OUTPUT"
+          else
+            echo "state=error" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Open or update the drift issue
+        if: steps.classify.outputs.state != 'clean'
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea  # v7.0.1
+        with:
+          script: |
+            const fs = require('fs');
+            const environment = '${{ matrix.environment }}';
+            const state = '${{ steps.classify.outputs.state }}';
+            const title = `Drift detected in ${environment}`;
+            let plan = '(no plan output)';
+            try {
+              const raw = fs.readFileSync('${{ matrix.directory }}/plan.txt', 'utf8');
+              plan = raw.length > 50000 ? '...(truncated)\n' + raw.slice(-50000) : raw;
+            } catch (error) {
+              core.warning(error.message);
+            }
+            const heading = state === 'error'
+              ? `The scheduled plan for \`${environment}\` failed to run.`
+              : `The live infrastructure in \`${environment}\` no longer matches state.`;
+            const body = [
+              heading,
+              '',
+              `Run: ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+              '',
+              'Either the change was intentional and belongs in Git, or it was not',
+              'and should be reverted by applying the current configuration.',
+              '',
+              '<details><summary>Plan output</summary>',
+              '',
+              '```terraform',
+              plan,
+              '```',
+              '',
+              '</details>',
+            ].join('\n');
+            const { owner, repo } = context.repo;
+            const existing = await github.paginate(github.rest.issues.listForRepo, {
+              owner, repo, state: 'open', labels: 'drift',
+            });
+            const match = existing.find(i => i.title === title);
+            if (match) {
+              await github.rest.issues.createComment({ owner, repo, issue_number: match.number, body });
+            } else {
+              await github.rest.issues.create({ owner, repo, title, body, labels: ['drift', environment] });
+            }
+
+      - name: Close the drift issue when the environment is clean
+        if: steps.classify.outputs.state == 'clean'
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea  # v7.0.1
+        with:
+          script: |
+            const environment = '${{ matrix.environment }}';
+            const title = `Drift detected in ${environment}`;
+            const { owner, repo } = context.repo;
+            const existing = await github.paginate(github.rest.issues.listForRepo, {
+              owner, repo, state: 'open', labels: 'drift',
+            });
+            for (const issue of existing.filter(i => i.title === title)) {
+              await github.rest.issues.createComment({
+                owner, repo, issue_number: issue.number,
+                body: 'Resolved: the scheduled plan reports no changes.',
+              });
+              await github.rest.issues.update({
+                owner, repo, issue_number: issue.number, state: 'closed',
+              });
+            }

@@ -1,0 +1,44 @@
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: nginx
+  namespace: demo
+  annotations:
+    # internet-facing puts the ALB in the public subnets tagged
+    # kubernetes.io/role/elb. Switch to internal for a private ALB.
+    alb.ingress.kubernetes.io/scheme: internet-facing
+
+    # ip mode registers pod IPs directly in the target group, which removes
+    # the extra kube-proxy hop that instance mode adds.
+    alb.ingress.kubernetes.io/target-type: ip
+
+    alb.ingress.kubernetes.io/healthcheck-path: /
+    alb.ingress.kubernetes.io/healthcheck-interval-seconds: "15"
+    alb.ingress.kubernetes.io/success-codes: "200"
+
+    # Delete the ALB when the Ingress goes away instead of leaking it.
+    alb.ingress.kubernetes.io/load-balancer-attributes: >-
+      deletion_protection.enabled=false,
+      idle_timeout.timeout_seconds=60,
+      routing.http.drop_invalid_header_fields.enabled=true
+
+    # Group several Ingresses onto one ALB. One ALB per Ingress is the single
+    # easiest way to make an EKS bill grow without noticing.
+    alb.ingress.kubernetes.io/group.name: aws-platform-dev
+    alb.ingress.kubernetes.io/group.order: "10"
+
+    alb.ingress.kubernetes.io/tags: >-
+      Project=aws-platform-engineering-lab,Environment=dev,ManagedBy=argocd
+spec:
+  ingressClassName: alb
+  rules:
+    - http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: nginx
+                port:
+                  name: http

@@ -1,0 +1,64 @@
+---
+# =========================================================
+# Priority classes
+#
+# Under node pressure the kubelet evicts by priority. Without these, a demo
+# pod and Prometheus are equally expendable, and the monitoring goes down at
+# exactly the moment it is needed.
+#
+# system-cluster-critical and system-node-critical already exist and are
+# reserved for the control plane components; these sit below them.
+# =========================================================
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: platform-critical
+value: 900000
+globalDefault: false
+preemptionPolicy: PreemptLowerPriority
+description: >-
+  Platform components the cluster cannot be operated without: ingress
+  controllers, CSI controllers, the autoscaler, Argo CD.
+---
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: platform-observability
+value: 800000
+globalDefault: false
+preemptionPolicy: PreemptLowerPriority
+description: >-
+  Prometheus, Alertmanager and Grafana. Evicted after platform-critical but
+  before any workload, because losing observability during an incident is
+  worse than losing a replica.
+---
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: workload-high
+value: 100000
+globalDefault: false
+preemptionPolicy: PreemptLowerPriority
+description: Production workloads that should survive node pressure.
+---
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: workload-default
+value: 0
+globalDefault: true
+preemptionPolicy: PreemptLowerPriority
+description: >-
+  The default for anything that does not ask. Zero rather than negative so a
+  pod without a priority class is not evicted ahead of best-effort batch work.
+---
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: workload-batch
+value: -10000
+globalDefault: false
+preemptionPolicy: Never
+description: >-
+  Interruptible work, typically pinned to the spot node pool. Never preempts
+  anything else and is the first thing evicted.

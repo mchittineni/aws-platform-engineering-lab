@@ -1,0 +1,52 @@
+---
+name: Terraform Validate
+
+on:
+  pull_request:
+    paths:
+      - "**/*.tf"
+      - "**/*.tftpl"
+      - ".terraform-version"
+
+jobs:
+  validate:
+
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        terraform:
+          - environments/bootstrap
+          - environments/dev
+          - environments/staging
+          - environments/production
+          - modules/vpc
+          - modules/eks
+          - modules/eks-platform-iam
+          - modules/irsa
+          - modules/ecr
+          - modules/tf-state-backend
+          - modules/github-oidc
+          - modules/security-baseline
+          - modules/cost-controls
+          - modules/observability
+          - modules/backup
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e  # v4.0.1
+        with:
+          terraform_version_file: .terraform-version
+
+      # -backend=false keeps validation free of any cloud credentials.
+      - name: Terraform Init
+        working-directory: ${{ matrix.terraform }}
+        run: terraform init -backend=false -input=false
+
+      - name: Terraform Validate
+        working-directory: ${{ matrix.terraform }}
+        run: terraform validate -no-color

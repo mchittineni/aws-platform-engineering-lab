@@ -1,0 +1,191 @@
+#####################################
+# Terraform
+#####################################
+
+# Terraform working directory
+.terraform/
+
+# Terraform state
+*.tfstate
+*.tfstate.*
+
+# Terraform variable files
+*.tfvars
+*.tfvars.json
+
+# Terraform plan files
+*.tfplan
+*.plan
+
+# Terraform crash logs
+crash.log
+crash.*.log
+
+# Terraform backend configuration (account and bucket specific)
+backend.hcl
+
+# Terraform plan output captured in CI
+plan.txt
+
+# Terraform override files
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+
+#####################################
+# Terraform Tools
+#####################################
+
+# Terraform plugin cache
+.terraformrc
+terraform.rc
+
+# Terraform docs generated files
+.terraform-docs.yml
+
+
+#####################################
+# AWS credentials
+#
+# There is no long lived AWS credential in this repository by design: CI uses
+# the GitHub OIDC provider and pods use IRSA. These entries exist so that a
+# local profile or an SSO cache cannot be committed by accident.
+#####################################
+
+.aws/
+credentials
+config.aws
+*_accessKeys.csv
+
+
+#####################################
+# Kubernetes
+#####################################
+
+# kubeconfig
+kubeconfig
+kubeconfig.*
+*.kubeconfig
+
+# Kubernetes secrets
+secret.yaml
+secrets.yaml
+*-secret.yaml
+
+# Helm local files
+charts/*/charts/
+charts/*/tmp/
+
+
+#####################################
+# Ansible
+#####################################
+
+# Ansible vault password
+vault-password.txt
+.password
+
+# Ansible retry files
+*.retry
+
+# Ansible inventory secrets
+inventory/*/group_vars/*secret*
+inventory/*/host_vars/*secret*
+
+# aws_ec2 dynamic inventory cache
+ansible-aws-ec2-inventory*
+
+
+#####################################
+# SSH Keys and Certificates
+#####################################
+
+*.pem
+*.key
+*.crt
+*.cer
+id_rsa
+id_rsa.pub
+known_hosts
+
+
+#####################################
+# Environment Variables
+#####################################
+
+.env
+.env.*
+*.env
+
+
+#####################################
+# Atlantis
+#####################################
+
+# Atlantis local data
+.atlantis/
+
+
+#####################################
+# GitHub Actions
+#####################################
+
+# Local action files
+act/
+.github/.secrets/
+
+
+#####################################
+# CI/CD Tools
+#####################################
+
+# Pre-commit
+.pre-commit-cache/
+
+# TFLint
+.tflint.d/
+
+# Checkov
+.checkov/
+
+
+#####################################
+# Editors
+#####################################
+
+# VS Code
+.vscode/
+
+# JetBrains
+.idea/
+
+
+#####################################
+# OS Files
+#####################################
+
+# macOS
+.DS_Store
+
+# Windows
+Thumbs.db
+
+
+#####################################
+# Logs
+#####################################
+
+*.log
+
+
+#####################################
+# Temporary files
+#####################################
+
+*.tmp
+*.temp
+*.bak
+*.swp
+*~

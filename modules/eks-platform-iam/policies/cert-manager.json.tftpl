@@ -1,0 +1,26 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "SolveDns01Challenge",
+      "Effect": "Allow",
+      "Action": "route53:GetChange",
+      "Resource": "arn:${partition}:route53:::change/*"
+    },
+    {
+      "Sid": "ChangeRecordSets",
+      "Effect": "Allow",
+      "Action": [
+        "route53:ChangeResourceRecordSets",
+        "route53:ListResourceRecordSets"
+      ],
+      "Resource": ${hosted_zone_arns}
+    },
+    {
+      "Sid": "ListZonesByName",
+      "Effect": "Allow",
+      "Action": "route53:ListHostedZonesByName",
+      "Resource": "*"
+    }
+  ]
+}

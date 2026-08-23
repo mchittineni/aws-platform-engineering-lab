@@ -1,0 +1,85 @@
+---
+# =========================================================
+# Default deny, then allow what is needed
+#
+# The VPC CNI enforces NetworkPolicy natively from EKS 1.27 onwards, provided
+# the vpc-cni add-on has network policy enabled. Without that, these objects
+# are accepted by the API server and enforce nothing — verify with:
+#
+#   kubectl -n kube-system get ds aws-node -o yaml | grep -i network-policy
+# =========================================================
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-all
+  namespace: demo
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+---
+# DNS has to be allowed explicitly, or every name lookup in the namespace
+# fails the moment the deny above is applied. This is the single most common
+# way a first NetworkPolicy rollout breaks a cluster.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-dns
+  namespace: demo
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+---
+# The ALB registers pod IPs directly in its target group (target-type: ip), so
+# health checks and client traffic arrive from the ALB's ENIs inside the VPC.
+# Narrow this to the actual VPC CIDR for the environment.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-alb-ingress
+  namespace: demo
+spec:
+  podSelector:
+    matchLabels:
+      app: nginx
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - ipBlock:
+            cidr: 10.0.0.0/8
+      ports:
+        - protocol: TCP
+          port: 8080
+---
+# Prometheus scrapes from the monitoring namespace. Without this the targets
+# go red as soon as the deny is in place.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-prometheus-scrape
+  namespace: demo
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
