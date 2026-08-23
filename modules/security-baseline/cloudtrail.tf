@@ -7,6 +7,7 @@
 # ---------------------------------------------------------------------------
 
 resource "aws_cloudwatch_log_group" "cloudtrail" {
+  #checkov:skip=CKV_AWS_338:Retention is a variable; the audit bucket is the durable copy
   count = var.enable_cloudtrail ? 1 : 0
 
   name              = "/aws/cloudtrail/${var.name_prefix}"
@@ -112,6 +113,11 @@ resource "aws_iam_role_policy" "cloudtrail" {
 }
 
 resource "aws_cloudtrail" "this" {
+  # Findings reach SNS through EventBridge rules, which can filter by severity.
+  # A trail SNS topic fires on log delivery, not on anything interesting.
+  # CloudWatch Logs integration is configured below via cloud_watch_logs_group_arn.
+  #checkov:skip=CKV_AWS_252:Alerting is via EventBridge, which can filter by severity
+  #checkov:skip=CKV2_AWS_10:CloudWatch Logs integration is configured, count-indexed
   count = var.enable_cloudtrail ? 1 : 0
 
   name                          = "${var.name_prefix}-trail"
