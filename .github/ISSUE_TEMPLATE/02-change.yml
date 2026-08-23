@@ -1,0 +1,77 @@
+---
+name: Propose a change
+description: A new module, a new variable, or a different default.
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: >-
+        What is hard or impossible today. Describe the problem, not the
+        solution — the solution is what the discussion is for.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What you would change
+      description: The resource, variable or default, and where it would live.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: layer
+    attributes:
+      label: Which layer owns this
+      description: >-
+        Terraform calls the AWS API, Ansible calls the Kubernetes API, Argo CD
+        reconciles from Git. The line is which API is being called. See ADR 0001.
+      options:
+        - Terraform (an AWS resource)
+        - Ansible (a controller or a cluster-wide object at install time)
+        - Argo CD (a workload reconciled from Git)
+        - CI or tooling
+        - Docs only
+        - Not sure
+    validations:
+      required: true
+
+  - type: dropdown
+    id: placement
+    attributes:
+      label: Where it belongs
+      description: >-
+        A variable that exists in only one environment usually means the module
+        should have taken a parameter instead.
+      options:
+        - "modules/ — two environments both need it"
+        - "environments/<env>/ — this is how one environment differs"
+        - "environments/bootstrap — singular per AWS account"
+        - "kubernetes/ or ansible/"
+        - Not sure
+    validations:
+      required: true
+
+  - type: textarea
+    id: blast-radius
+    attributes:
+      label: Blast radius
+      description: >-
+        Does this replace any existing resource? A replaced node group or KMS
+        key is an outage or a data loss and looks identical to an update in a
+        diff. Say "additive only" if it is.
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: constraints
+    attributes:
+      label: Constraints this change respects
+      options:
+        - label: Any new IAM permission is scoped to a resource ARN, not `*`
+        - label: Any new IAM role accepts and passes `permissions_boundary_arn`
+        - label: Any new variable has a description, and a `validation` block where a rule exists
+        - label: This does not widen public exposure, or it does so deliberately and says so above
+        - label: This is additive to the security posture, or the trade-off is stated above
