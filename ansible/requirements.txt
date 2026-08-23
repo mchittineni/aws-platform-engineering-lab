@@ -4,7 +4,7 @@
 #   python3 -m pip install -r ansible/requirements.txt
 #   ansible-galaxy collection install -r ansible/requirements.yml
 
-ansible-core>=2.18,<2.20
+ansible-core>=2.21.3,<2.22
 
 # kubernetes.core
 kubernetes>=31.0.0
