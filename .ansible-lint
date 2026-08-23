@@ -1,0 +1,24 @@
+---
+# ansible-lint walks every YAML file it can find, which pulls in files that
+# other tools already own. Without this it reports GitHub Actions workflows as
+# malformed Ansible and fails the build on findings actionlint is responsible
+# for.
+exclude_paths:
+  # actionlint lints these, and they are not Ansible content.
+  - .github/
+  # kubeconform validates these against the Kubernetes schemas.
+  - kubernetes/
+  - .venv/
+
+# var-naming[no-role-prefix] wants every set_fact, register and default inside a
+# role prefixed with the role name, so `node_zones` in `eks_validate` becomes
+# `eks_validate_node_zones`. That is a real convention and worth adopting, but
+# it is 56 renames across ten files reaching into templates and group_vars, and
+# a missed reference fails at runtime rather than at lint time.
+#
+# It stays in warn_list rather than skip_list on purpose: the finding remains
+# visible in every run instead of disappearing, which is the same reason the
+# tfsec ignores in this repository each carry a reason. Move it out of here as
+# the roles are touched.
+warn_list:
+  - var-naming[no-role-prefix]
