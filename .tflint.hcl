@@ -14,7 +14,7 @@ plugin "terraform" {
 
 plugin "aws" {
   enabled = true
-  version = "0.44.0"
+  version = "0.48.0"
   source  = "github.com/terraform-linters/tflint-ruleset-aws"
 }
 
@@ -42,5 +42,11 @@ rule "terraform_required_version" {
 }
 
 rule "terraform_required_providers" {
+  enabled = true
+}
+
+# A variable without a type accepts anything, which turns a typo in a tfvars
+# file into a confusing plan rather than an error.
+rule "terraform_typed_variables" {
   enabled = true
 }
