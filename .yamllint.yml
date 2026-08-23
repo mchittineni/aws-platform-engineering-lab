@@ -1,7 +1,16 @@
 ---
 extends: default
 
+# Terraform working directories contain vendored YAML that is not ours to lint.
+ignore: |
+  .terraform/
+  **/.terraform/
+
 rules:
+  # Ansible and Kubernetes both treat bare yes/no/on/off as strings in some
+  # positions and booleans in others. Restricting truthy values to true/false
+  # removes the ambiguity. check-keys stays off because Kubernetes uses keys
+  # such as `on` in workflow files.
   truthy:
     allowed-values:
       - "true"
@@ -13,3 +22,10 @@ rules:
 
   document-start:
     present: true
+
+  # `mode: 0644` is a decimal 644 to YAML 1.2 and an octal to a reader, which
+  # is how a file ends up with permissions nobody intended. Quote it or write
+  # it explicitly.
+  octal-values:
+    forbid-implicit-octal: true
+    forbid-explicit-octal: false
