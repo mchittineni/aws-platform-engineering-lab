@@ -183,7 +183,7 @@ as hardened for your own threat model.
 
 | When | What runs |
 | --- | --- |
-| Every PR | `terraform fmt`, `validate`, `tflint`, `tfsec`, Checkov, gitleaks, actionlint |
+| Every PR | `terraform fmt`, `validate`, `tflint`, `tfsec`, Checkov |
 | Every PR | kubeconform against the 1.34 schemas, Checkov container isolation policies |
 | Every PR | ansible-lint, plus a playbook syntax check for all three environments |
 | Every PR touching AWS | Read-only plan per environment, scoped to that environment's state prefix, posted as one sticky comment |
@@ -197,18 +197,28 @@ satisfied, so those rules are enforced by STS rather than by convention.
 
 ## Verification
 
-`make ci` runs what CI runs. Everything in this repository currently passes:
+Everything in this repository currently passes. The Gate column says where each
+check is enforced, because not all of them are: `gitleaks`, `actionlint`,
+`yamllint` and `markdownlint` run from `.pre-commit-config.yaml` on a developer
+machine only.
 
-| Check | Status |
-| --- | --- |
-| `terraform validate` | 15 stacks and modules |
-| `terraform fmt -recursive` | clean |
-| `tfsec` | 0 findings, 7 justified ignores |
-| `checkov` | 0 failures, 56 justified skips across 25 rules |
-| `ansible-lint` | 0 failures, 56 `var-naming` warnings left visible |
-| `yamllint` | 0 errors |
-| Secret scan | 0 findings |
-| YAML parse | every Ansible, Kubernetes and workflow file |
+| Check | Status | Gate |
+| --- | --- | --- |
+| `terraform validate` | 15 stacks and modules | CI + `make ci` |
+| `terraform fmt -recursive` | clean | CI + `make ci` |
+| `tflint` | 0 findings | CI + `make ci` |
+| `tfsec` | 0 findings, 7 justified ignores | CI + `make ci` |
+| `checkov` | 0 failures, 56 justified skips across 25 rules | CI + `make ci` |
+| `ansible-lint` | 0 failures, 56 `var-naming` warnings left visible | CI + `make ci` |
+| `kubeconform` | clean against the 1.34 schemas | CI + `make ci` |
+| `actionlint` | 0 findings | pre-commit only |
+| `yamllint` | 0 errors, 13 `document-start` warnings | pre-commit only |
+| `markdownlint` | 0 findings | pre-commit only |
+| Secret scan | 0 findings | pre-commit only |
+
+Run `pre-commit install` once. For secret scanning that is not optional: a hook
+that runs before the commit is the only one that helps, since CI only sees a
+secret once it is already in the history.
 
 Every Checkov skip and tfsec ignore carries its reason on the line above it.
 Most are resolution failures rather than gaps — Checkov does not follow a
