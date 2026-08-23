@@ -13,9 +13,12 @@ variable "github_repository" {
   description = "GitHub repository allowed to assume the deployment roles, as org/repo"
   type        = string
 
+  # A shape check alone accepts "org/*", which would build the subject
+  # repo:org/*:pull_request and let every repository in the organisation assume
+  # the plan role.
   validation {
-    condition     = length(split("/", var.github_repository)) == 2
-    error_message = "github_repository must be written as org/repo."
+    condition     = can(regex("^[A-Za-z0-9][A-Za-z0-9-_.]*/[A-Za-z0-9][A-Za-z0-9-_.]*$", var.github_repository))
+    error_message = "github_repository must be written as org/repo, using only letters, digits, hyphen, underscore and dot. Wildcards are not permitted."
   }
 }
 
