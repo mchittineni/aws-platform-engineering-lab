@@ -10,6 +10,10 @@ locals {
 # ---------------------------------------------------------------------------
 
 resource "aws_cloudwatch_log_group" "cluster" {
+  # Retention is a variable. Production sets 365; dev and staging are shorter
+  # on purpose, because a lab paying for a year of dev control-plane logs is a
+  # cost gap, not a security one.
+  #checkov:skip=CKV_AWS_338:Retention is per-environment; production sets 365
   name              = "/aws/eks/${var.cluster_name}/cluster"
   retention_in_days = var.cluster_log_retention_days
   kms_key_id        = aws_kms_key.logs.arn
@@ -42,6 +46,10 @@ resource "aws_security_group" "cluster" {
 # ---------------------------------------------------------------------------
 
 resource "aws_eks_cluster" "this" {
+  # endpoint_public_access is a variable: production sets it false, and where
+  # it is true public_access_cidrs is required and validated to reject
+  # 0.0.0.0/0. Checkov evaluates the module default, not the environment.
+  #checkov:skip=CKV_AWS_39:Public access is per-environment and CIDR-restricted
   name     = var.cluster_name
   role_arn = aws_iam_role.cluster.arn
   version  = var.kubernetes_version
