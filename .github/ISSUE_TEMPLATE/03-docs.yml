@@ -1,0 +1,36 @@
+---
+name: Docs are wrong or missing
+description: The documentation claims something the code does not do, or omits something it should say.
+labels: ["documentation"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        A documented control that does not hold is a security problem, not a
+        docs problem. If the gap is that a control is weaker than documented,
+        report it privately through the Security tab instead. See `SECURITY.md`.
+
+  - type: input
+    id: where
+    attributes:
+      label: Which document
+      placeholder: docs/security.md, README.md, docs/operations.md
+    validations:
+      required: true
+
+  - type: textarea
+    id: claim
+    attributes:
+      label: What it says
+      description: Quote the line, and link it if you can.
+    validations:
+      required: true
+
+  - type: textarea
+    id: reality
+    attributes:
+      label: What is actually true
+      description: >-
+        Point at the code. A file and line is worth more than a paragraph.
+    validations:
+      required: true

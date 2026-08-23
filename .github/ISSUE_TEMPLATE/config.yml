@@ -1,0 +1,4 @@
+---
+# A blank issue is almost always a question with no environment, no plan output
+# and no version, which costs a round trip before it can be read.
+blank_issues_enabled: false

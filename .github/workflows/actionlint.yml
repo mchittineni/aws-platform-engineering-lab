@@ -1,4 +1,3 @@
----
 name: Workflow Lint
 
 # The workflows here hold the AWS deployment credentials. A typo in an `if:`

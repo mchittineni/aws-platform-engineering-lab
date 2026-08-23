@@ -1,4 +1,3 @@
----
 name: Ansible Lint
 
 on:
@@ -33,9 +32,6 @@ jobs:
       - name: Run ansible-lint
         run: ansible-lint
 
-      # A syntax check parses every play, role and template without touching a
-      # cluster, which catches the class of error that only shows up half way
-      # through a real run.
       - name: Syntax check every environment
         run: |
           for env in dev staging production; do
