@@ -8,6 +8,11 @@
 # ---------------------------------------------------------------------------
 
 resource "aws_launch_template" "node" {
+  # A hop limit of 1 stops a pod reaching IMDS at all, because the packet
+  # crosses the container network namespace first. IMDSv2 is required
+  # (http_tokens), which is the control that matters; the limit of 2 is what
+  # makes the node usable. Documented in SECURITY.md.
+  #checkov:skip=CKV_AWS_341:Hop limit 2 is required for pods to reach IMDSv2
   for_each = var.node_groups
 
   name        = "${var.cluster_name}-${each.key}"
