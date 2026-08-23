@@ -28,7 +28,13 @@ jobs:
         with:
           sarif_file: tfsec.sarif
 
+      # Code scanning needs GitHub Advanced Security on a private repository, so
+      # on this one the upload returns "Resource not accessible by integration".
+      # The finding gate is the step that fails the job, not this upload, so a
+      # missing Security tab must not turn the build red. Drop
+      # continue-on-error if the repository becomes public or gets GHAS.
       - name: Upload the tfsec SARIF report
+        continue-on-error: true
         uses: github/codeql-action/upload-sarif@f1f6e5f6af878fb37288ce1c627459e94dbf7d01  # v3.28.5
         with:
           sarif_file: tfsec.sarif
@@ -55,9 +61,19 @@ jobs:
           framework: terraform
           quiet: true
           output_format: cli,sarif
+          # Without this the action leaves the report at its own default path
+          # and the upload step fails with "Path does not exist: checkov.sarif".
+          # `console` is the destination for the cli half of output_format.
+          output_file_path: "console,checkov.sarif"
 
+      # Code scanning needs GitHub Advanced Security on a private repository, so
+      # on this one the upload returns "Resource not accessible by integration".
+      # The finding gate is the step that fails the job, not this upload, so a
+      # missing Security tab must not turn the build red. Drop
+      # continue-on-error if the repository becomes public or gets GHAS.
       - name: Upload the Checkov SARIF report
         if: always()
+        continue-on-error: true
         uses: github/codeql-action/upload-sarif@f1f6e5f6af878fb37288ce1c627459e94dbf7d01  # v3.28.5
         with:
           sarif_file: checkov.sarif
