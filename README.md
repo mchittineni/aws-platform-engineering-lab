@@ -37,7 +37,7 @@ common denominator.
 | --- | --- |
 | Network | 3-AZ VPC, public and private subnets, NAT, S3 gateway endpoint plus 7 interface endpoints, KMS-encrypted flow logs |
 | Kubernetes | EKS with Secret envelope encryption, all 5 log types, access-entry auth, IMDSv2-only launch templates |
-| Identity | IRSA per controller, GitHub OIDC for CI. No long-lived AWS credential anywhere |
+| Identity | IRSA per controller, GitHub OIDC for CI, permissions boundary on every role CI creates. No long-lived AWS credential anywhere |
 | Storage | EBS CSI driver, gp3 as the cluster default, gp3-retain and gp3-backup classes |
 | Ingress | AWS Load Balancer Controller, one shared ALB per environment |
 | Delivery | Argo CD, prune and self-heal on, values layered per environment |
@@ -147,12 +147,22 @@ Not a list of intentions — each of these fails a build, a plan, or an API call
 when violated.
 
 - **No long-lived AWS credentials.** CI uses the GitHub OIDC provider, pods use
-  IRSA. A subject ending in `:*` is rejected by variable validation.
+  IRSA. Subjects are validated against a closed allowlist of the three shapes
+  GitHub issues, and any subject containing `*` is rejected — a trailing-`:*`
+  check would still admit `repo:org/*` and a bare `*`.
 - **No SSH.** No key pair, no inbound port 22. Access is Session Manager, which
   is IAM-authenticated and recorded in CloudTrail.
 - **The pipeline cannot hide its tracks.** Both CI role types carry a deny policy
   covering `cloudtrail:StopLogging`, `guardduty:DeleteDetector`, deletion of any
-  audit record, and `kms:ScheduleKeyDeletion` on the state and audit keys.
+  audit record, and `kms:ScheduleKeyDeletion` on the state and audit keys — and
+  a permissions boundary that makes those denies transitive. Without the
+  boundary the deny is walkable: `IAMFullAccess` would let the apply role create
+  an unconstrained second role and assume it.
+- **A plan cannot write state.** The plan role holds `s3:GetObject` and
+  `kms:Decrypt` on its own environment's `aws/<env>/*` prefix only. `PutObject`
+  and `DeleteObject` belong to the apply role, so a pull request cannot overwrite
+  production state, and neither role can reach the bootstrap state that defines
+  them.
 - **`0.0.0.0/0` on the Kubernetes API is rejected** by variable validation, not
   by review.
 - **Every KMS key is customer managed** with rotation and a 30 day deletion
@@ -161,8 +171,8 @@ when violated.
   `enableNetworkPolicy`, and the validation role fails the run if policy objects
   exist without the enforcing agent — because a policy the API server accepts
   and nothing enforces is worse than no policy.
-- **tfsec and Checkov pass with zero findings.** The six `#tfsec:ignore`
-  comments each carry their reason on the line above.
+- **tfsec and Checkov pass with zero findings.** The seven `#tfsec:ignore` and
+  56 `#checkov:skip` comments each carry their reason on the line above.
 
 The model, including the gaps that are known and accepted — single account,
 single region, broad CI apply permissions, no image signing — is in
@@ -176,7 +186,7 @@ as hardened for your own threat model.
 | Every PR | `terraform fmt`, `validate`, `tflint`, `tfsec`, Checkov, gitleaks, actionlint |
 | Every PR | kubeconform against the 1.34 schemas, Checkov container isolation policies |
 | Every PR | ansible-lint, plus a playbook syntax check for all three environments |
-| Every PR touching AWS | Read-only plan per environment, posted as one sticky comment |
+| Every PR touching AWS | Read-only plan per environment, scoped to that environment's state prefix, posted as one sticky comment |
 | Apply | Manual dispatch against a protected GitHub environment, executing the **saved** plan |
 | Daily | Read-only plan per environment; drift opens an issue, a clean plan closes it |
 | Weekly | tfsec on a schedule, and Dependabot on actions, providers and Python deps |
@@ -193,8 +203,18 @@ satisfied, so those rules are enforced by STS rather than by convention.
 | --- | --- |
 | `terraform validate` | 15 stacks and modules |
 | `terraform fmt -recursive` | clean |
-| `tfsec` | 0 findings, 6 justified ignores |
+| `tfsec` | 0 findings, 7 justified ignores |
+| `checkov` | 0 failures, 56 justified skips across 25 rules |
+| `ansible-lint` | 0 failures, 56 `var-naming` warnings left visible |
+| `yamllint` | 0 errors |
+| Secret scan | 0 findings |
 | YAML parse | every Ansible, Kubernetes and workflow file |
+
+Every Checkov skip and tfsec ignore carries its reason on the line above it.
+Most are resolution failures rather than gaps — Checkov does not follow a
+`count`-indexed reference, so a public access block or lifecycle rule attached
+that way reads as absent. The rest are documented accepted risks: single
+region, and an access log bucket that cannot log to itself.
 
 The bootstrap playbook ends with a validation role that asserts enough nodes are
 `Ready`, that they span at least two zones, that there is **exactly one** default
@@ -224,7 +244,7 @@ live if any policy exists.
 Completed:
 
 - [x] Remote state with KMS, versioning, access logging and TLS-only policy
-- [x] Keyless GitHub Actions OIDC roles, per environment, with an audit guardrail
+- [x] Keyless GitHub Actions OIDC roles, per environment, with an audit guardrail and a permissions boundary
 - [x] 3-AZ VPC, flow logs, S3 gateway and 7 interface endpoints
 - [x] EKS with Secret envelope encryption and managed control plane log retention
 - [x] Access entries instead of `aws-auth`; creator admin revoked outside dev

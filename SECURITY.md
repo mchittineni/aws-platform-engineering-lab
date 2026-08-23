@@ -21,8 +21,11 @@ repository:
 - a CI workflow that can be triggered by an untrusted fork
 - a default that exposes something publicly
 - a secret committed by mistake
+- an IAM path that escapes the permissions boundary or the audit deny policy
+- an OIDC trust policy that a repository, branch or fork outside the intended
+  scope can satisfy
 
-All four are in scope.
+All six are in scope.
 
 ## What is deliberately not here
 
@@ -40,8 +43,16 @@ recorded in CloudTrail.
 - Every KMS key is customer managed with rotation enabled.
 - Terraform state is encrypted, versioned, access logged, and its bucket
   policy refuses non-TLS and unencrypted writes.
+- State access is scoped per environment. The plan role can read `aws/<env>/*`
+  and nothing else; writing state is the apply role's permission alone, so a
+  pull request cannot alter the state of any environment.
 - CloudTrail records every management event, and the CI apply role is denied
   the permissions that would let it stop or delete the trail.
+- Those denies are carried by a permissions boundary as well as by the roles,
+  and the pipeline cannot create a principal without it. A deny attached only
+  to a role is walkable by a role with `IAMFullAccess`; a boundary is not.
+- GitHub OIDC subjects are validated against a closed allowlist, and any
+  subject containing `*` is rejected.
 - The audit bucket denies object deletion to every principal except the ones
   explicitly listed.
 - The EKS API endpoint defaults to private, and `0.0.0.0/0` is rejected by
