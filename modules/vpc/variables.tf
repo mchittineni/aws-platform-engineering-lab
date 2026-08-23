@@ -87,3 +87,9 @@ variable "tags" {
   type        = map(string)
   default     = {}
 }
+
+variable "permissions_boundary_arn" {
+  description = "Permissions boundary applied to every IAM role this module creates. The CI apply role is denied iam:CreateRole without it, so this is required in any environment applied by the pipeline."
+  type        = string
+  default     = null
+}

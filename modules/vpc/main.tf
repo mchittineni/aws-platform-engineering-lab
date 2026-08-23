@@ -179,6 +179,7 @@ resource "aws_vpc_endpoint" "s3" {
 }
 
 resource "aws_security_group" "vpc_endpoints" {
+  #checkov:skip=CKV2_AWS_5:Attached to the interface endpoints below, count-indexed
   count = length(var.interface_endpoints) > 0 ? 1 : 0
 
   name        = "${var.name}-vpc-endpoints"
@@ -217,6 +218,7 @@ resource "aws_vpc_endpoint" "interface" {
 # ---------------------------------------------------------------------------
 
 resource "aws_cloudwatch_log_group" "flow_logs" {
+  #checkov:skip=CKV_AWS_338:Retention is per-environment; production sets 365
   count = var.enable_flow_logs ? 1 : 0
 
   name              = "/aws/vpc/${var.name}/flow-logs"
@@ -291,8 +293,9 @@ data "aws_iam_policy_document" "flow_logs_assume_role" {
 resource "aws_iam_role" "flow_logs" {
   count = var.enable_flow_logs ? 1 : 0
 
-  name               = "${var.name}-flow-logs"
-  assume_role_policy = data.aws_iam_policy_document.flow_logs_assume_role.json
+  name                 = "${var.name}-flow-logs"
+  assume_role_policy   = data.aws_iam_policy_document.flow_logs_assume_role.json
+  permissions_boundary = var.permissions_boundary_arn
 
   tags = var.tags
 }
