@@ -11,7 +11,7 @@ kubernetes>=31.0.0
 
 # amazon.aws and the aws_ec2 inventory plugin
 boto3>=1.35.0
-botocore>=1.35.0
+botocore>=1.43.81
 
 # kubernetes.core.helm shells out to the helm binary, which is not a Python
 # package: install it separately.
