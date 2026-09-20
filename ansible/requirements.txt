@@ -10,7 +10,7 @@ ansible-core>=2.21.4,<2.22
 kubernetes>=31.0.0
 
 # amazon.aws and the aws_ec2 inventory plugin
-boto3>=1.43.91
+boto3>=1.43.96
 botocore>=1.43.92
 
 # kubernetes.core.helm shells out to the helm binary, which is not a Python
