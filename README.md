@@ -1,5 +1,12 @@
 # AWS Platform Engineering Lab
 
+[![CI](https://github.com/mchittineni/aws-platform-engineering-lab/actions/workflows/terraform-validate.yml/badge.svg)](https://github.com/mchittineni/aws-platform-engineering-lab/actions/workflows/terraform-validate.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![PRs welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
+
+[![Buy me a coffee](https://img.shields.io/badge/Buy%20me%20a%20coffee-FFDD00?style=for-the-badge&logo=buymeacoffee&logoColor=000000)](https://buymeacoffee.com/mchittineni)
+[![GitHub Sponsors](https://img.shields.io/badge/Sponsor-24292F?style=for-the-badge&logo=githubsponsors&logoColor=EA4AAA)](https://github.com/sponsors/mchittineni)
+
 A production-shaped AWS platform, built entirely as code: EKS across three
 availability zones, GitOps delivery, observability inside and outside the
 cluster, an account security baseline that is enforced rather than documented,
