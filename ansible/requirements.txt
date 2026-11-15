@@ -7,7 +7,7 @@
 ansible-core>=2.22.0,<2.23
 
 # kubernetes.core
-kubernetes>=37.0.1
+kubernetes>=37.0.2
 
 # amazon.aws and the aws_ec2 inventory plugin
 boto3>=1.43.124
